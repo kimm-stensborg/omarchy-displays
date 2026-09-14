@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import qs.Ui
 import qs.Commons
 import "Layout.js" as Layout
@@ -60,6 +61,38 @@ Panel {
     return null
   }
   readonly property string focusedMonitor: root.focusedDisplay ? root.focusedDisplay.name : ""
+
+  // Every monitor's bar has its own copy of this widget, and an IPC target
+  // belongs to whichever copy registered it first. So only the copy on the
+  // focused screen holds it, and SUPER+CTRL+D opens the popup where you are
+  // looking. `omarchy-shell shell toggle` cannot do this for a plugin that
+  // also has an overlay: the shell routes that to the overlay. The claim waits
+  // a beat, so the copy giving the target up has let go first.
+  readonly property string screenName: {
+    var window = root.QsWindow ? root.QsWindow.window : null
+    var screen = window && window.screen ? window.screen : null
+    if (!screen) return ""
+    if (typeof Hyprland.monitorFor === "function") {
+      var hypr = Hyprland.monitorFor(screen)
+      if (hypr && hypr.name) return String(hypr.name)
+    }
+    return String(screen.name || "")
+  }
+  readonly property bool focusedHere: root.screenName !== "" && !!Hyprland.focusedMonitor
+    && root.screenName === String(Hyprland.focusedMonitor.name || "")
+  property bool ipcOwner: false
+
+  onFocusedHereChanged: {
+    if (!root.focusedHere) root.ipcOwner = false
+    else ipcClaim.restart()
+  }
+
+  Timer {
+    id: ipcClaim
+    interval: 150
+    repeat: false
+    onTriggered: root.ipcOwner = root.focusedHere
+  }
 
   // Carry sub-notch touchpad deltas between wheel events.
   property real wheelAccumulator: 0
@@ -240,6 +273,7 @@ Panel {
   }
 
   IpcHandler {
+    enabled: root.ipcOwner
     target: root.ipcTarget
 
     function brightness(percent: string): string { return root.brightnessIpc(percent) }
@@ -402,7 +436,10 @@ Panel {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  Component.onCompleted: refresh()
+  Component.onCompleted: {
+    refresh()
+    if (root.focusedHere) ipcClaim.restart()
+  }
 
   // KeyboardPanel primes focus at open-time, so SUPER-bound summons land with
   // j/k ready to navigate. Keep a default landing point, but don't paint the

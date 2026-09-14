@@ -65,13 +65,28 @@ panel, add this to `~/.config/hypr/bindings.lua`:
 ```lua
 -- Displays popup (io.github.kimm-stensborg.displays)
 hl.unbind("SUPER + CTRL + D")
-o.bind("SUPER + CTRL + D", "Displays", "omarchy-shell shell summon io.github.kimm-stensborg.displays '{\"view\":\"popup\"}'")
+o.bind("SUPER + CTRL + D", "Displays", "omarchy-shell io.github.kimm-stensborg.displays toggle")
 ```
 
-The binding goes through the overlay because the shell routes
-`summon`/`toggle` for a plugin that has an overlay to that overlay. The
-`{"view":"popup"}` payload makes the overlay open the bar popup on the focused
-screen instead. Without a payload, the same command opens Arrange displays.
+This calls the popup's own IPC target rather than `omarchy-shell shell toggle`.
+The shell routes `summon` and `toggle` for a plugin that also has an overlay
+to that overlay, so `omarchy-shell shell toggle io.github.kimm-stensborg.displays`
+opens Arrange displays instead.
+
+Every monitor's bar has its own copy of the widget. Only the copy on the
+focused screen holds the IPC target, so the popup opens on the screen you're
+looking at.
+
+## Update
+
+```bash
+omarchy plugin update io.github.kimm-stensborg.displays
+omarchy-restart-shell
+```
+
+The shell notices the changed files and says it reloads the plugin, but it
+re-creates the plugin from the QML it has already compiled. The new code only
+runs after a restart.
 
 ## Remove
 

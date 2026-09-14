@@ -111,13 +111,6 @@ Item {
     } catch (error) {
       console.warn(root.pluginId, "ignoring unreadable payload", payloadJson)
     }
-    // A bar popup cannot be reached through summon/toggle once a plugin also
-    // has an overlay -- the shell routes those here. So the keybinding sends
-    // {"view":"popup"} and this hands it on to the bar.
-    if (payload.view === "popup") {
-      root.togglePopup()
-      return
-    }
     root.statusMessage = ""
     root.focusSection = "canvas"
     root.selectedIndex = 0
@@ -141,16 +134,6 @@ Item {
   function toggle() {
     if (root.opened) root.dismiss()
     else root.open("{}")
-  }
-
-  function togglePopup() {
-    var bar = root.shell ? root.shell.bar : null
-    if (!bar) return
-    if (typeof bar.isBarWidgetOpen === "function" && bar.isBarWidgetOpen(root.pluginId)) {
-      if (typeof bar.hideBarWidget === "function") bar.hideBarWidget(root.pluginId)
-    } else if (typeof bar.summonBarWidget === "function") {
-      bar.summonBarWidget(root.pluginId)
-    }
   }
 
   function focusedMonitorName() {
