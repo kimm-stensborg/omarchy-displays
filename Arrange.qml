@@ -17,6 +17,11 @@ import "Layout.js" as Layout
 // would accept, leaving a wall the pointer cannot cross -- is not a state the
 // canvas can get into.
 //
+// Each box shows what is on that screen right now, and pointing at a box
+// lights up its real screen, so two identical monitors cannot be mixed up. The
+// screen the editor opens on is photographed just before the editor appears:
+// a live capture of it would only show the editor itself.
+//
 // Nothing is written until Apply, and Apply is the one change in this plugin
 // that can leave the machine unusable, so it comes with a way back:
 //
@@ -111,18 +116,33 @@ Item {
     } catch (error) {
       console.warn(root.pluginId, "ignoring unreadable payload", payloadJson)
     }
+    // Already up: a second summon must not photograph the editor itself.
+    if (root.opened) return
     root.statusMessage = ""
     root.focusSection = "canvas"
     root.selectedIndex = 0
     root.cursorActive = false
     root.openScreen = root.focusedMonitorName()
+    root.revealed = false
+    root.hostShot = ""
+    root.hoverName = ""
+    root.flashName = ""
+    // Two files in turn, so the Image sees a new source and reloads.
+    root.shotCount += 1
+    shotProc.target = Quickshell.env("XDG_RUNTIME_DIR") + "/omarchy-displays-screen-" + (root.shotCount % 2) + ".png"
+    shotProc.command = ["grim", "-o", root.openScreen, shotProc.target]
+    if (!shotProc.running) shotProc.running = true
+    revealTimeout.restart()
     root.opened = true
     root.reload()
-    Qt.callLater(function() { keys.forceActiveFocus() })
   }
 
   function close() {
     root.opened = false
+    root.revealed = false
+    root.identifying = false
+    root.hoverName = ""
+    root.flashName = ""
     root.cancelDrag()
   }
 
@@ -138,6 +158,80 @@ Item {
 
   function focusedMonitorName() {
     return Hyprland.focusedMonitor ? String(Hyprland.focusedMonitor.name || "") : ""
+  }
+
+  function screenName(screen) {
+    var hypr = screen && typeof Hyprland.monitorFor === "function" ? Hyprland.monitorFor(screen) : null
+    return hypr && hypr.name ? String(hypr.name) : String(screen ? screen.name || "" : "")
+  }
+
+  function screenFor(name) {
+    var screens = Quickshell.screens
+    for (var i = 0; i < screens.length; i++) {
+      if (root.screenName(screens[i]) === name) return screens[i]
+    }
+    return null
+  }
+
+  // ── which screen is which ─────────────────────────────────────────────────
+  //
+  // Two identical monitors are just DP-5 and DP-7 on the canvas, and those
+  // names can swap between boots. So the boxes show each screen's contents,
+  // and every physical screen gets a frame and its name on the glass: all of
+  // them for a moment when the editor opens (and on `i` / Identify), the one
+  // under the pointer while a box is hovered, and the one just picked with
+  // the keyboard.
+
+  property bool revealed: false
+  property string hostShot: ""
+  property int shotCount: 0
+  property bool identifying: false
+  property string hoverName: ""
+  property string flashName: ""
+
+  // The editor appears once the screen under it has been photographed, so the
+  // photo is of what the user was looking at, not of the editor.
+  function reveal() {
+    if (root.revealed || !root.opened) return
+    root.revealed = true
+    root.identify()
+    Qt.callLater(function() { keys.forceActiveFocus() })
+  }
+
+  function identify() {
+    root.identifying = true
+    identifyTimer.restart()
+  }
+
+  Timer {
+    id: identifyTimer
+    interval: 2500
+    repeat: false
+    onTriggered: root.identifying = false
+  }
+
+  Timer {
+    id: flashTimer
+    interval: 1200
+    repeat: false
+    onTriggered: root.flashName = ""
+  }
+
+  // grim takes about a tenth of a second; slower than this, open without it.
+  Timer {
+    id: revealTimeout
+    interval: 600
+    repeat: false
+    onTriggered: root.reveal()
+  }
+
+  Process {
+    id: shotProc
+    property string target: ""
+    onExited: function(code) {
+      if (code === 0) root.hostShot = "file://" + shotProc.target
+      root.reveal()
+    }
   }
 
   // The overlay opens on the screen that had focus, and stays there while you
@@ -581,13 +675,17 @@ Item {
   }
   onSelectedChanged: {
     if (root.focusSection === "scale") root.selectedIndex = root.sectionStart("scale")
+    if (root.opened && root.revealed && root.selected) {
+      root.flashName = root.selected
+      flashTimer.restart()
+    }
   }
 
   // ── the editor ────────────────────────────────────────────────────────────
 
   PanelWindow {
     id: panel
-    visible: root.opened && !root.confirming
+    visible: root.opened && root.revealed && !root.confirming
     screen: root.targetScreen
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
@@ -637,6 +735,10 @@ Item {
         onCloseRequested: root.dismiss()
         onTabRequested: function(direction) { root.selectAdjacent(direction) }
         onTextKey: function(text) {
+          if (text === "i") {
+            root.identify()
+            return
+          }
           if (text === "H") root.nudge(-1, 0)
           else if (text === "L") root.nudge(1, 0)
           else if (text === "K") root.nudge(0, -1)
@@ -759,6 +861,47 @@ Item {
                 border.width: box.isSelected ? 2 : 1
                 border.color: box.isSelected ? root.accent : root.hairline
 
+                // What is on this screen right now, dimmed so the labels read.
+                // Hidden while an unapplied rotation or resolution change has
+                // given the box a different shape from the picture.
+                Item {
+                  id: shotLayer
+                  anchors.fill: parent
+                  anchors.margins: box.border.width
+                  clip: true
+
+                  readonly property var liveMon: Layout.find(root.live, box.modelData)
+                  readonly property bool isHost: box.modelData === root.openScreen
+                  readonly property bool sameShape: !!shotLayer.liveMon && shotLayer.liveMon.enabled && !!box.mon
+                    && (shotLayer.liveMon.transform % 2) === (box.mon.transform % 2)
+                    && shotLayer.liveMon.width * box.mon.height === shotLayer.liveMon.height * box.mon.width
+                  visible: shotLayer.sameShape
+
+                  ScreencopyView {
+                    anchors.fill: parent
+                    visible: !shotLayer.isHost
+                    captureSource: !shotLayer.isHost && shotLayer.sameShape && root.opened && root.revealed && !root.confirming
+                      ? root.screenFor(box.modelData) : null
+                    live: true
+                  }
+
+                  Image {
+                    anchors.fill: parent
+                    visible: shotLayer.isHost
+                    source: shotLayer.isHost ? root.hostShot : ""
+                    cache: false
+                    asynchronous: true
+                    fillMode: Image.Stretch
+                    sourceSize.width: 640
+                  }
+
+                  Rectangle {
+                    anchors.fill: parent
+                    color: root.background
+                    opacity: box.isSelected ? 0.45 : 0.6
+                  }
+                }
+
                 Column {
                   anchors.centerIn: parent
                   width: parent.width - Style.spacing.md * 2
@@ -805,6 +948,12 @@ Item {
 
                   property point pressAt: Qt.point(0, 0)
                   property bool moved: false
+
+                  // Pointing at a box lights up its real screen.
+                  onContainsMouseChanged: {
+                    if (grab.containsMouse) root.hoverName = box.modelData
+                    else if (root.hoverName === box.modelData) root.hoverName = ""
+                  }
 
                   onPressed: function(mouse) {
                     grab.pressAt = grab.mapToItem(stage, mouse.x, mouse.y)
@@ -1095,7 +1244,7 @@ Item {
               anchors.verticalCenter: parent.verticalCenter
               anchors.right: actions.left
               anchors.rightMargin: Style.spacing.lg
-              text: "h/l or Tab pick a display · Shift+H/J/K/L move it · j/k walk the settings"
+              text: "h/l or Tab pick a display · Shift+H/J/K/L move it · j/k walk the settings · i identify"
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -1109,6 +1258,13 @@ Item {
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.spacing.md
 
+              Button {
+                text: "Identify"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                bordered: true
+                onClicked: root.identify()
+              }
               Button {
                 text: "Reset"
                 foreground: root.foreground
@@ -1140,6 +1296,84 @@ Item {
                 onClicked: root.apply()
                 onHovered: function(isHovered) { if (isHovered) root.hoverSection("actions", 2) }
               }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── the name on the glass ─────────────────────────────────────────────────
+  //
+  // One click-through window per screen, never taking focus, so the editor
+  // stays usable under it. A frame round the edge and the name at the top:
+  // the editor's card sits in the middle of its own screen, clear of both.
+
+  Variants {
+    model: root.opened && root.revealed && !root.confirming ? Quickshell.screens : []
+
+    PanelWindow {
+      id: marker
+      required property var modelData
+      screen: modelData
+
+      readonly property string monitorName: root.screenName(marker.modelData)
+      readonly property var mon: Layout.find(root.working, marker.monitorName)
+      readonly property bool lit: root.identifying || root.hoverName === marker.monitorName
+                                  || root.flashName === marker.monitorName
+
+      anchors { top: true; bottom: true; left: true; right: true }
+      color: "transparent"
+      WlrLayershell.namespace: "omarchy-displays-identify"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      exclusionMode: ExclusionMode.Ignore
+      mask: Region {}
+
+      Item {
+        anchors.fill: parent
+        opacity: marker.lit ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 180 } }
+
+        Rectangle {
+          anchors.fill: parent
+          color: "transparent"
+          border.width: Math.max(4, Style.space(6))
+          border.color: root.accent
+        }
+
+        Rectangle {
+          anchors.horizontalCenter: parent.horizontalCenter
+          anchors.top: parent.top
+          anchors.topMargin: Style.space(56)
+          width: markerColumn.implicitWidth + Style.spacing.panelPadding * 2
+          height: markerColumn.implicitHeight + Style.spacing.panelPadding * 2
+          radius: Style.cornerRadius
+          color: root.background
+          border.width: Math.max(1, Style.space(2))
+          border.color: root.accent
+
+          Column {
+            id: markerColumn
+            anchors.centerIn: parent
+            spacing: Style.spacing.sm
+
+            Text {
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: marker.mon ? Layout.displayName(marker.mon) : marker.monitorName
+              color: root.accent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.subtitle * 2
+              font.bold: true
+              textFormat: Text.PlainText
+            }
+            Text {
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: marker.monitorName + (marker.mon && marker.mon.focused ? " · focused" : "")
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.subtitle
+              textFormat: Text.PlainText
             }
           }
         }

@@ -31,6 +31,8 @@ o.bind("SUPER + CTRL + D", "Displays", "omarchy-shell io.github.kimm-stensborg.d
 - **Setup displays**, opened from the popup or **Setup → Displays** in the Omarchy
   menu, is where you drag monitors into place. It also sets scale, resolution,
   refresh rate, rotation, and which monitors are on.
+  - Each monitor's box shows what's on that screen, and pointing at a box
+    lights up the real screen, so identical monitors can't be mixed up.
   - A ghost shows where a dragged monitor will land, and gaps between monitors
     can't happen.
   - After **Apply** you have 15 seconds to keep the change. Otherwise it
