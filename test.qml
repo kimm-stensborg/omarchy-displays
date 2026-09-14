@@ -56,6 +56,11 @@ QtObject {
     if (parsed.desks.length !== 1) throw new Error("desk remembered")
     if (Layout.deskUpdate(live, parsed.rules, parsed.desks, block) !== null) throw new Error("desk stable")
     if (!Layout.parseDeskLine(Layout.deskLine(parsed.desks[0]))) throw new Error("desk line")
+    var mirrored = Layout.withChange(live, parsed.rules, "DP-5", { mirror: "DP-7" }, parsed.desks)
+    if (mirrored.block.indexOf('mirror = "DP-7"') < 0) throw new Error("mirror")
+    if (Layout.onDesk(Layout.find(mirrored.layout, "DP-5"))) throw new Error("mirror on desk")
+    Layout.sanitizeMirrors(Layout.cloneLayout(mirrored.layout))
+    if (Layout.newMonitors(live, parsed.rules, parsed.desks).length !== 0) throw new Error("new monitors")
     Layout.extractBlock("x\n" + block + "\ny")
 
     var change = Layout.withChange(live, parsed.rules, "DP-5", { scale: 1.25 })

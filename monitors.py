@@ -132,7 +132,7 @@ def check_rule(line):
             errors.append("a disabled rule carries only output and disabled")
         return errors
 
-    extra = set(fields) - {"output", "mode", "position", "scale", "transform"}
+    extra = set(fields) - {"output", "mode", "position", "scale", "transform", "mirror"}
     if extra:
         errors.append("unexpected keys: %s" % ", ".join(sorted(extra)))
     position = fields.get("position", "")
@@ -147,6 +147,10 @@ def check_rule(line):
     transform = fields.get("transform")
     if transform is not None and not re.match(r"^[0-7]$", transform):
         errors.append("transform must be 0-7")
+    # A mirror names its target by connector, as Hyprland's mirror key takes it.
+    mirror = fields.get("mirror")
+    if mirror is not None and not (mirror.startswith('"') and CONNECTOR.match(mirror[1:-1])):
+        errors.append("mirror must be a quoted connector name")
     return errors
 
 

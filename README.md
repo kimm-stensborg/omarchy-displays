@@ -35,12 +35,14 @@ o.bind("SUPER + CTRL + D", "Displays", "omarchy-shell io.github.kimm-stensborg.d
     lights up the real screen, so identical monitors can't be mixed up.
   - A ghost shows where a dragged monitor will land, and gaps between monitors
     can't happen.
+  - Each monitor has its own brightness, and can mirror another.
   - After **Apply** you have 15 seconds to keep the change. Otherwise it
     reverts, so a bad setting can't lock you out.
 
 Scale changes made elsewhere, like Omarchy's `SUPER + /`, are kept too. Each set
 of monitors keeps its own layout: unplug the laptop from your desk and plug it
-back in, and the desk comes back just as you left it.
+back in, and the desk comes back just as you left it. Plug in a monitor it has
+never seen, and a notification offers to place it.
 
 It all works from the keyboard: `h` `j` `k` `l` to move around,
 `Shift` + `H` `J` `K` `L` to move a monitor, `Enter` to choose, `Esc` to close.

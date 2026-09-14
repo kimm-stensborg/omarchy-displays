@@ -83,8 +83,9 @@ Item {
   readonly property bool dirty: root.blockLoaded && root.proposedBlock !== root.currentBlock
   readonly property bool edited: JSON.stringify(Layout.renderBlock(root.initial, root.passthrough))
                                  !== JSON.stringify(Layout.renderBlock(root.working, root.passthrough))
-  readonly property var offMonitors: root.working.filter(function(m) { return !m.enabled })
-  readonly property int enabledCount: root.working.filter(function(m) { return m.enabled }).length
+  // Off, or mirroring another: no box of their own on the canvas.
+  readonly property var offMonitors: root.working.filter(function(m) { return !Layout.onDesk(m) })
+  readonly property int enabledCount: root.working.filter(function(m) { return Layout.onDesk(m) }).length
   readonly property bool busy: writeProc.running || internalProc.running
 
   readonly property string banner: {
@@ -118,8 +119,14 @@ Item {
     } catch (error) {
       console.warn(root.pluginId, "ignoring unreadable payload", payloadJson)
     }
-    // Already up: a second summon must not photograph the editor itself.
-    if (root.opened) return
+    // Already up: a second summon must not photograph the editor itself --
+    // though it can still hand over a new monitor to place.
+    if (root.opened) {
+      if (payload.place) root.startPlacing(String(payload.place))
+      return
+    }
+    root.pendingPlace = payload.place ? String(payload.place) : ""
+    root.placing = ""
     root.statusMessage = ""
     root.focusSection = "canvas"
     root.selectedIndex = 0
@@ -141,6 +148,7 @@ Item {
 
   function close() {
     root.opened = false
+    root.placing = ""
     root.revealed = false
     root.identifying = false
     root.hoverName = ""
@@ -310,11 +318,16 @@ Item {
       var enabled = root.working.filter(function(m) { return m.enabled })
       root.selected = focused.length ? focused[0].name : (enabled.length ? enabled[0].name : "")
     }
+    if (root.pendingPlace) {
+      root.startPlacing(root.pendingPlace)
+      root.pendingPlace = ""
+    }
+    root.readBrightness()
   }
 
   function setWorking(layout) {
     root.working = layout
-    var names = layout.filter(function(m) { return m.enabled }).map(function(m) { return m.name })
+    var names = layout.filter(function(m) { return Layout.onDesk(m) }).map(function(m) { return m.name })
     if (names.join("|") !== root.stageNames.join("|")) root.stageNames = names
     if (!root.dragName) root.frameStage()
   }
@@ -326,7 +339,7 @@ Item {
   }
 
   function selectAdjacent(delta) {
-    var order = root.working.filter(function(m) { return m.enabled }).concat(root.offMonitors)
+    var order = root.working.filter(function(m) { return Layout.onDesk(m) }).concat(root.offMonitors)
     if (!order.length) return
     var index = -1
     for (var i = 0; i < order.length; i++) if (order[i].name === root.selected) index = i
@@ -343,6 +356,8 @@ Item {
     if (!e) return
     for (var key in patch) e[key] = patch[key]
     e.scale = Layout.cleanScale(e.scale, e.width, e.height) || 1
+    // Switching off a display frees anything that mirrored it.
+    Layout.sanitizeMirrors(after)
     root.statusMessage = ""
     root.setWorking(Layout.reflow(before, after))
   }
@@ -368,6 +383,123 @@ Item {
 
   function setTransform(value) {
     if (root.selectedMonitor) root.edit(root.selected, { transform: Number(value) & 7 })
+  }
+
+  // A mirror leaves the arrangement -- the gap it leaves closes -- and taking
+  // the mirror off puts it back beside the others.
+  function setMirror(value) {
+    if (root.selectedMonitor) root.edit(root.selected, { mirror: String(value || "") })
+  }
+
+  // ── placing a new monitor ────────────────────────────────────────────────
+  //
+  // From the "New display connected" notification: the new monitor follows
+  // the pointer over the canvas, the ghost shows where it would land, and a
+  // click puts it there. Esc leaves it where Hyprland put it.
+  property string placing: ""
+  property string pendingPlace: ""
+
+  function startPlacing(name) {
+    var m = Layout.find(root.working, name)
+    if (!Layout.onDesk(m)) {
+      root.placing = ""
+      return
+    }
+    root.selected = name
+    root.placing = name
+    root.statusMessage = "Point to where " + Layout.displayName(m) + " · " + name
+      + " sits on your desk and click to put it there. Esc leaves it where it is."
+  }
+
+  function stopPlacing() {
+    root.placing = ""
+    root.cancelDrag()
+    root.statusMessage = ""
+  }
+
+  // ── brightness of the selected display ───────────────────────────────────
+  //
+  // Straight to the hardware, like the popup's slider -- not part of Apply,
+  // which is about where displays go. External monitors answer over DDC in
+  // about a third of a second, so the row appears once the display has said
+  // what it is at; one that cannot be dimmed never shows the row.
+  property bool brightnessAvailable: false
+  property int brightnessPercent: 0
+  property string brightnessOf: ""
+  property int pendingBrightness: 0
+  property bool brightnessQueued: false
+  property bool brightnessReread: false
+
+  function readBrightness() {
+    var m = root.selectedMonitor
+    root.brightnessAvailable = false
+    root.brightnessOf = ""
+    if (!m || !m.enabled || !m.liveEnabled) return
+    if (brightnessReadProc.running) {
+      root.brightnessReread = true
+      return
+    }
+    brightnessReadProc.target = m.name
+    brightnessReadProc.command = ["omarchy-brightness-display", "--monitor", m.name]
+    brightnessReadProc.running = true
+  }
+
+  function previewBrightness(value) {
+    root.brightnessPercent = Layout.clampBrightness(value)
+    brightnessDebounce.restart()
+  }
+
+  function setBrightness(value) {
+    if (!root.brightnessOf) return
+    var percent = Layout.clampBrightness(value)
+    root.brightnessPercent = percent
+    root.pendingBrightness = percent
+    if (brightnessSetProc.running) {
+      root.brightnessQueued = true
+      return
+    }
+    root.brightnessQueued = false
+    brightnessSetProc.command = ["omarchy-brightness-display", "--no-osd", "--monitor", root.brightnessOf, percent + "%"]
+    brightnessSetProc.running = true
+  }
+
+  Process {
+    id: brightnessReadProc
+    property string target: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        // The selection moved on while this display was answering.
+        if (brightnessReadProc.target !== root.selected) {
+          root.brightnessReread = true
+          return
+        }
+        var value = parseInt(String(text || "").split("\n")[0], 10)
+        root.brightnessAvailable = isFinite(value)
+        if (!root.brightnessAvailable) return
+        root.brightnessPercent = Math.max(0, Math.min(100, value))
+        root.brightnessOf = brightnessReadProc.target
+      }
+    }
+    onRunningChanged: {
+      if (running || !root.brightnessReread) return
+      root.brightnessReread = false
+      root.readBrightness()
+    }
+  }
+
+  Timer {
+    id: brightnessDebounce
+    interval: 180
+    repeat: false
+    onTriggered: root.setBrightness(root.brightnessPercent)
+  }
+
+  // No read after a set: re-reading races the display and can come back empty.
+  Process {
+    id: brightnessSetProc
+    stdout: StdioCollector { waitForEnd: true }
+    onRunningChanged: if (!running && root.brightnessQueued) root.setBrightness(root.pendingBrightness)
   }
 
   // The laptop panel's on/off belongs to Omarchy's own toggle, which clamshell
@@ -601,11 +733,29 @@ Item {
   })
   readonly property var actionNames: ["reset", "cancel", "apply"]
 
+  // Off, or another display to show. The laptop panel is not offered as a
+  // mirror: clamshell re-enables it with its own rule, undoing the mirror.
+  readonly property var mirrorOptions: {
+    var m = root.selectedMonitor
+    if (!m || m.internal) return []
+    var out = [{ value: "", label: "Off" }]
+    for (var i = 0; i < root.working.length; i++) {
+      var o = root.working[i]
+      if (o.name === m.name || !Layout.onDesk(o)) continue
+      out.push({ value: o.name, label: "Show " + Layout.displayName(o) + " · " + o.name })
+    }
+    return out
+  }
+
   readonly property var sections: {
     var m = root.selectedMonitor
     if (!m) return ["canvas", "actions"]
     if (!m.enabled) return ["canvas", "enabled", "actions"]
-    return ["canvas", "scale", "resolution", "refresh", "rotation", "enabled", "actions"]
+    var list = ["canvas", "scale", "resolution", "refresh", "rotation"]
+    if (root.mirrorOptions.length > 1) list.push("mirror")
+    if (root.brightnessAvailable) list.push("brightness")
+    list.push("enabled", "actions")
+    return list
   }
 
   function sectionStart(section) {
@@ -647,6 +797,10 @@ Item {
       root.setRefresh(root.cycle(root.refreshOptions, String(m.refresh), delta))
     else if (section === "rotation" && m)
       root.setTransform(root.cycle(root.rotationOptions, String(m.transform), delta))
+    else if (section === "mirror" && m)
+      root.setMirror(root.cycle(root.mirrorOptions, String(m.mirror || ""), delta))
+    else if (section === "brightness")
+      root.setBrightness(root.brightnessPercent + delta * 5)
     else if (section === "actions")
       root.selectedIndex = Math.max(0, Math.min(root.actionNames.length - 1, root.selectedIndex + delta))
   }
@@ -689,6 +843,7 @@ Item {
   }
   onSelectedChanged: {
     if (root.focusSection === "scale") root.selectedIndex = root.sectionStart("scale")
+    root.readBrightness()
     if (root.opened && root.revealed && root.selected) {
       root.flashName = root.selected
       flashTimer.restart()
@@ -740,6 +895,7 @@ Item {
         anchors.topMargin: card.contentTopInset
         anchors.bottomMargin: card.contentBottomInset
         blocked: resolutionDropdown.popupOpen || refreshDropdown.popupOpen || rotationDropdown.popupOpen
+                 || mirrorDropdown.popupOpen
         onMoveRequested: function(dx, dy) {
           root.cursorFromMouse = false
           if (!root.cursorActive) { root.cursorActive = true; return }
@@ -747,7 +903,10 @@ Item {
           else if (dx !== 0) root.moveCursorH(dx)
         }
         onActivateRequested: if (root.cursorActive) root.activateCursor()
-        onCloseRequested: root.dismiss()
+        onCloseRequested: {
+          if (root.placing) root.stopPlacing()
+          else root.dismiss()
+        }
         onTabRequested: function(direction) { root.cursorFromMouse = false; root.selectAdjacent(direction) }
         onTextKey: function(text) {
           root.cursorFromMouse = false
@@ -992,6 +1151,31 @@ Item {
                 }
               }
             }
+
+            // Placing a new monitor: it follows the pointer, and a click drops
+            // it where the ghost is.
+            MouseArea {
+              anchors.fill: parent
+              z: 10
+              visible: root.placing !== ""
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onPositionChanged: function(mouse) {
+                var m = Layout.find(root.working, root.placing)
+                if (!m) return
+                var size = Layout.logicalSize(m)
+                root.dragTo(root.placing,
+                            (mouse.x - stage.originX) / stage.factor - size.width / 2,
+                            (mouse.y - stage.originY) / stage.factor - size.height / 2,
+                            Style.space(18) / stage.factor)
+              }
+              onClicked: {
+                var name = root.placing
+                root.placing = ""
+                root.statusMessage = ""
+                root.drop(name)
+              }
+            }
           }
 
           // ---------- displays that are off ----------
@@ -1001,7 +1185,7 @@ Item {
 
             Text {
               anchors.verticalCenter: parent.verticalCenter
-              text: "Off:"
+              text: "Not on the desk:"
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -1014,6 +1198,7 @@ Item {
               Button {
                 required property var modelData
                 text: Layout.displayName(modelData) + " · " + modelData.name
+                      + (modelData.mirror ? " · shows " + modelData.mirror : " · off")
                 fontSize: Style.font.caption
                 foreground: root.foreground
                 fontFamily: root.fontFamily
@@ -1204,6 +1389,102 @@ Item {
                 hasCursor: root.cursorActive && root.focusSection === "rotation"
                 onChanged: function(value) { root.setTransform(value) }
                 onHovered: function(isHovered) { if (isHovered) root.hoverSection("rotation", 0); else root.unhoverSection("rotation", 0) }
+              }
+            }
+
+            Item {
+              width: parent.width
+              height: mirrorDropdown.implicitHeight
+              visible: root.mirrorOptions.length > 1 && root.selectedMonitor !== null && root.selectedMonitor.enabled
+
+              Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: "MIRROR"
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                font.letterSpacing: 1.2
+                textFormat: Text.PlainText
+              }
+              Dropdown {
+                id: mirrorDropdown
+                anchors.left: parent.left
+                anchors.leftMargin: root.labelWidth
+                showLabel: false
+                options: root.mirrorOptions
+                value: root.selectedMonitor ? String(root.selectedMonitor.mirror || "") : ""
+                fontFamily: root.fontFamily
+                hasCursor: root.cursorActive && root.focusSection === "mirror"
+                onChanged: function(value) { root.setMirror(value) }
+                onHovered: function(isHovered) { if (isHovered) root.hoverSection("mirror", 0); else root.unhoverSection("mirror", 0) }
+              }
+            }
+
+            // Brightness goes to the display at once; it is not part of Apply.
+            Item {
+              width: parent.width
+              height: brightnessRow.height
+              visible: root.brightnessAvailable && root.selectedMonitor !== null && root.selectedMonitor.enabled
+
+              Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: "BRIGHTNESS"
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                font.letterSpacing: 1.2
+                textFormat: Text.PlainText
+              }
+              CursorSurface {
+                id: brightnessRow
+                anchors.left: parent.left
+                anchors.leftMargin: root.labelWidth
+                width: Style.space(260)
+                height: brightnessSlider.implicitHeight + Style.spacing.controlGap
+                hasCursor: root.cursorActive && root.focusSection === "brightness"
+                foreground: root.foreground
+                outline: true
+
+                PanelSlider {
+                  id: brightnessSlider
+                  anchors.fill: parent
+                  anchors.leftMargin: Style.space(6)
+                  anchors.rightMargin: Style.space(6)
+                  minimum: 1
+                  maximum: 100
+                  step: 1
+                  integer: true
+                  value: root.brightnessPercent
+                  trackColor: Style.selectedFillFor(root.foreground, root.accent)
+                  fillColor: root.foreground
+                  knobColor: root.foreground
+                  onMoved: function(v) { root.previewBrightness(v) }
+                  onReleased: function(v) {
+                    brightnessDebounce.stop()
+                    root.setBrightness(v)
+                  }
+                }
+
+                HoverHandler {
+                  onHoveredChanged: {
+                    if (hovered) root.hoverSection("brightness", 0)
+                    else root.unhoverSection("brightness", 0)
+                  }
+                }
+              }
+              Text {
+                anchors.left: brightnessRow.right
+                anchors.leftMargin: Style.spacing.lg
+                anchors.verticalCenter: parent.verticalCenter
+                text: Math.round(brightnessSlider.dragging ? brightnessSlider.liveValue : root.brightnessPercent) + "%"
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                textFormat: Text.PlainText
               }
             }
 

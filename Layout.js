@@ -332,6 +332,8 @@ function parseMonitors(raw) {
       x: Math.round(Number(m.x) || 0),
       y: Math.round(Number(m.y) || 0),
       mirrorOf: String(m.mirrorOf || "none"),
+      // What the block says it should mirror, filled in by layoutFrom.
+      mirror: "",
       modes: modes
     })
   }
@@ -371,6 +373,27 @@ function cloneLayout(layout) {
   return out
 }
 
+// A display that takes a place in the arrangement: switched on, and showing
+// its own picture. One that mirrors another has no place of its own -- it
+// shows its target's -- so it is left out of positions, gaps and snapping.
+function onDesk(m) {
+  return !!m && !!m.enabled && !m.mirror
+}
+
+// Mirrors that can no longer be: of a display that is off, of itself, of
+// another mirror, or set on the laptop panel (clamshell re-enables that with
+// its own rule, which would quietly undo the mirror). Cleared in place.
+function sanitizeMirrors(layout) {
+  for (var i = 0; i < (layout || []).length; i++) {
+    var m = layout[i]
+    if (!m.mirror) continue
+    var target = find(layout, m.mirror)
+    if (!m.enabled || m.internal || !target || target.name === m.name || !target.enabled || target.mirror)
+      m.mirror = ""
+  }
+  return layout
+}
+
 // --------------------------------------------------------------- geometry
 
 function logicalSize(m) {
@@ -393,7 +416,7 @@ function rectOf(m) {
 function enabledRects(layout) {
   var out = []
   for (var i = 0; i < (layout || []).length; i++) {
-    if (layout[i].enabled) out.push(rectOf(layout[i]))
+    if (onDesk(layout[i])) out.push(rectOf(layout[i]))
   }
   return out
 }
@@ -463,13 +486,13 @@ function normalize(layout) {
   var minX = Infinity
   var minY = Infinity
   for (var i = 0; i < out.length; i++) {
-    if (!out[i].enabled) continue
+    if (!onDesk(out[i])) continue
     minX = Math.min(minX, out[i].x)
     minY = Math.min(minY, out[i].y)
   }
   if (!isFinite(minX)) return out
   for (var j = 0; j < out.length; j++) {
-    if (!out[j].enabled) continue
+    if (!onDesk(out[j])) continue
     out[j].x -= minX
     out[j].y -= minY
   }
@@ -582,7 +605,7 @@ function insertBeside(layout, name, size, target, side) {
   var out = cloneLayout(layout)
   for (var i = 0; i < out.length; i++) {
     var n = out[i]
-    if (!n.enabled || n.name === name) continue
+    if (!onDesk(n) || n.name === name) continue
     if (side === "right" && n.x >= target.x + target.width) n.x += size.width
     else if (side === "left" && n.x >= target.x) n.x += size.width
     else if (side === "below" && n.y >= target.y + target.height) n.y += size.height
@@ -614,7 +637,7 @@ function settleDrop(layout, name) {
 // result has no gap and no overlap, so a drop never needs refusing.
 function dropPreview(layout, name, rect, threshold) {
   var m = find(layout, name)
-  if (!m || !m.enabled) return null
+  if (!onDesk(m)) return null
   var size = logicalSize(m)
   var others = enabledRects(layout).filter(function(r) { return r.name !== name })
   var moving = { name: name, x: Math.round(rect.x), y: Math.round(rect.y), width: size.width, height: size.height }
@@ -643,7 +666,7 @@ function dropPreview(layout, name, rect, threshold) {
 // that way.
 function stepMove(layout, name, dx, dy) {
   var m = find(layout, name)
-  if (!m || !m.enabled) return null
+  if (!onDesk(m)) return null
   var r = rectOf(m)
   var side = dx > 0 ? "right" : dx < 0 ? "left" : dy > 0 ? "below" : "above"
   var others = enabledRects(layout).filter(function(o) { return o.name !== name })
@@ -731,7 +754,7 @@ function reflow(before, after, keepFrame) {
   var names = []
   for (var j = 0; j < (before || []).length; j++) {
     var b = before[j]
-    if (!b.enabled || !byName[b.name]) continue
+    if (!onDesk(b) || !byName[b.name]) continue
     old[b.name] = rectOf(b)
     names.push(b.name)
   }
@@ -739,7 +762,7 @@ function reflow(before, after, keepFrame) {
 
   function newSize(name) {
     var m = byName[name]
-    return m.enabled ? logicalSize(m) : { width: 0, height: 0 }
+    return onDesk(m) ? logicalSize(m) : { width: 0, height: 0 }
   }
 
   var placed = {}
@@ -782,7 +805,7 @@ function reflow(before, after, keepFrame) {
     }
   }
 
-  var newcomers = out.filter(function(m) { return m.enabled && !placed[m.name] })
+  var newcomers = out.filter(function(m) { return onDesk(m) && !placed[m.name] })
   newcomers.sort(byPosition)
   for (var c = 0; c < newcomers.length; c++) put(newcomers[c].name, { x: newcomers[c].x, y: newcomers[c].y })
 
@@ -800,7 +823,7 @@ function reflow(before, after, keepFrame) {
 
   for (var w = 0; w < out.length; w++) {
     var r = rects[out[w].name]
-    if (!r || !out[w].enabled) continue
+    if (!r || !onDesk(out[w])) continue
     out[w].x = r.x
     out[w].y = r.y
   }
@@ -823,6 +846,7 @@ function renderRule(rule) {
   var line = 'hl.monitor({ output = "' + rule.output + '", mode = "' + rule.mode
     + '", position = "' + rule.position + '", scale = ' + rule.scale
   if (rule.transform) line += ", transform = " + rule.transform
+  if (rule.mirror) line += ', mirror = "' + rule.mirror + '"'
   return line + " })"
 }
 
@@ -836,9 +860,12 @@ function ruleLabel(rule) {
 // internal panel whose scale it cannot read back, so switching it off goes
 // through Omarchy's own toggle (omarchy-hyprland-monitor-internal), and its
 // rule here keeps describing how it looks when it is on.
+// A mirror is written by the target's connector name, the form Hyprland's
+// `mirror` key takes (and the one Omarchy's own mirror toggle writes). Its
+// position stays a literal like every other rule's; Hyprland does not use it.
 function ruleFor(m) {
   if (!m.internal && !m.enabled) return { output: m.selector, disabled: true }
-  return {
+  var rule = {
     output: m.selector,
     disabled: false,
     mode: modeString(m.width, m.height, m.refresh),
@@ -846,6 +873,8 @@ function ruleFor(m) {
     scale: formatScale(m.scale),
     transform: (Number(m.transform) || 0) & 7
   }
+  if (m.mirror) rule.mirror = m.mirror
+  return rule
 }
 
 // Enabled rules left to right, then disabled ones by name -- an order that
@@ -947,7 +976,8 @@ function parseRule(line) {
     mode: fields.mode || "preferred",
     position: fields.position || "auto",
     scale: fields.scale || "1",
-    transform: (Number(fields.transform) || 0) & 7
+    transform: (Number(fields.transform) || 0) & 7,
+    mirror: fields.mirror || ""
   }
 }
 
@@ -1022,9 +1052,10 @@ function deskLine(desk) {
     monitors: desk.monitors,
     gdk: desk.gdk,
     rules: sortRules(desk.rules).map(function(r) {
-      return r.disabled
-        ? { output: r.output, disabled: true }
-        : { output: r.output, mode: r.mode, position: r.position, scale: r.scale, transform: r.transform || 0 }
+      if (r.disabled) return { output: r.output, disabled: true }
+      var out = { output: r.output, mode: r.mode, position: r.position, scale: r.scale, transform: r.transform || 0 }
+      if (r.mirror) out.mirror = r.mirror
+      return out
     })
   })
 }
@@ -1052,8 +1083,10 @@ function parseDeskLine(line) {
     if (!/^([0-9]+x[0-9]+(@[0-9]+([.][0-9]+)?)?|preferred)$/.test(mode)) return null
     if (!POSITION_PATTERN.test(position)) return null
     if (!/^[0-9]+([.][0-9]+)?$/.test(scale)) return null
+    var mirror = r.mirror === undefined ? "" : String(r.mirror)
+    if (mirror && !CONNECTOR_PATTERN.test(mirror)) return null
     rules.push({ output: output, disabled: false, mode: mode, position: position, scale: scale,
-                 transform: (Number(r.transform) || 0) & 7 })
+                 transform: (Number(r.transform) || 0) & 7, mirror: mirror })
   }
   var monitors = data.monitors.map(String)
   for (var j = 0; j < monitors.length; j++) if (!safeString(monitors[j])) return null
@@ -1096,17 +1129,38 @@ function deskUpdate(live, rules, desks, block) {
   return next === block ? null : next
 }
 
+function matchesOutput(monitor, output) {
+  output = String(output || "")
+  if (output.indexOf("desc:") === 0) {
+    var wanted = output.substring(5)
+    return !!wanted && (monitor.description === wanted || monitor.description.indexOf(wanted) === 0)
+  }
+  return output === monitor.name
+}
+
 function matchRule(monitor, rules) {
   for (var i = 0; i < (rules || []).length; i++) {
-    var r = rules[i]
-    if (r.output.indexOf("desc:") === 0) {
-      var wanted = r.output.substring(5)
-      if (wanted && (monitor.description === wanted || monitor.description.indexOf(wanted) === 0)) return r
-    } else if (r.output === monitor.name) {
-      return r
-    }
+    if (matchesOutput(monitor, rules[i].output)) return rules[i]
   }
   return null
+}
+
+// Monitors plugged in that nothing has ever placed: no rule in the block, and
+// in no remembered desk. The first time one appears it is offered for placing.
+function newMonitors(live, rules, desks) {
+  var out = []
+  for (var i = 0; i < (live || []).length; i++) {
+    var m = live[i]
+    if (!m.enabled || m.declarable === false || matchRule(m, rules)) continue
+    var known = false
+    for (var d = 0; !known && d < (desks || []).length; d++) {
+      for (var s = 0; s < desks[d].monitors.length; s++) {
+        if (matchesOutput(m, desks[d].monitors[s])) { known = true; break }
+      }
+    }
+    if (!known) out.push(m)
+  }
+  return out
 }
 
 // The layout the file declares, laid over what is connected. Declared values
@@ -1142,6 +1196,7 @@ function layoutFrom(live, rules) {
         var s = Number(r.scale)
         if (isFinite(s) && s > 0) e.scale = s
         e.transform = r.transform || 0
+        e.mirror = r.mirror || ""
         if (!e.internal) e.enabled = true
       }
     }
@@ -1203,7 +1258,7 @@ function divergence(live, rules) {
     var m = live[i]
     if (!m.enabled || skip[m.name]) continue
     var r = matchRule(m, rules)
-    if (!r || r.disabled) continue
+    if (!r || r.disabled || r.mirror) continue
     var declared = Number(r.scale)
     if (!(declared > 0)) continue
     if (scaleUnits(m.scale) !== scaleUnits(declared))
@@ -1224,7 +1279,7 @@ function drift(live, rules) {
     var m = live[i]
     if (!m.enabled || skip[m.name]) continue
     var r = matchRule(m, rules)
-    if (!r || r.disabled) continue
+    if (!r || r.disabled || r.mirror) continue
     var pos = POSITION_PATTERN.exec(String(r.position || ""))
     if (!pos) continue
     if (scaleUnits(m.scale) !== scaleUnits(Number(r.scale))) continue

@@ -242,9 +242,34 @@ Item {
     root.warned = ""
   }
 
+  // ── a monitor nobody has placed ───────────────────────────────────────────
+  //
+  // The first time a monitor shows up that no remembered desk has ever held,
+  // Hyprland parks it at the end of the row. Offer to put it where it really
+  // sits: the notification opens Setup displays with it following the pointer.
+  // Once per monitor per session, and only with something to place it beside.
+  property var notified: ({})
+
+  function notifyNew() {
+    var placedCount = root.live.filter(function(m) { return m.enabled }).length
+    if (placedCount < 2) return
+    var fresh = Layout.newMonitors(root.live, root.rules, root.desks)
+    for (var i = 0; i < fresh.length; i++) {
+      var m = fresh[i]
+      if (root.notified[m.selector]) continue
+      root.notified[m.selector] = true
+      Quickshell.execDetached([
+        "omarchy-notification-send", "-g", "󰍹", "New display connected",
+        Layout.displayName(m) + " · " + m.name + ". Click to place it on your desk.",
+        "--exec", "omarchy-shell", "shell", "summon", root.pluginId, JSON.stringify({ place: m.name })
+      ])
+    }
+  }
+
   function sample() {
     if (!root.ready || writeProc.running || reloadProc.running) return
     root.readLive(function() {
+      root.notifyNew()
       if (!Layout.divergence(root.live, root.rules).length && !Layout.drift(root.live, root.rules).length
           && !Layout.deskUpdate(root.live, root.rules, root.desks, root.block)) {
         root.settled()

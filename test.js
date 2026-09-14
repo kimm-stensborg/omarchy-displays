@@ -421,6 +421,51 @@ check("a switched-off display is not a divergence",
   check("so is one that is not JSON", L.parseDeskLine("-- desk {nope"), null)
 }
 
+// ----------------------------------------------------------------- mirror
+
+let mirroredBlock = ""
+{
+  const m = L.withChange(live, declared, "DP-5", { mirror: "DP-7" })
+  check("a mirror leaves the desk, and the gap closes",
+        positions(m.layout).filter(p => p[0] !== "DP-5"), [["DP-7", 0, 0], ["eDP-1", 2560, 0]])
+  ok("it is written as a mirror", m.block.includes(', mirror = "DP-7" })'))
+  const read = L.parseBlock(m.block)
+  check("and read back", read.rules.filter(r => r.mirror).map(r => [r.output, r.mirror]),
+        [["desc:Lenovo Group Limited T27QD-40 VNACDZ1G", "DP-7"]])
+  check("and remembered with its desk",
+        L.parseDeskLine(L.deskLine(read.desks[0])).rules.filter(r => r.mirror).map(r => r.mirror), ["DP-7"])
+  check("a mirror is never a divergence", L.divergence(withLive({ "DP-5": { scale: 2 } }), read.rules), [])
+  // Once the mirror is applied the laptop has closed the gap; the mirror
+  // itself sits wherever Hyprland puts it, which is never drift.
+  check("nor drift", L.drift(withLive({ "DP-5": { x: 0 }, "eDP-1": { x: 2560 } }), read.rules), [])
+  const back = L.withChange(live, read.rules, "DP-5", { mirror: "" })
+  check("taken off, it gets a place again", back.check.ok, true)
+  ok("and is not written as a mirror", !back.block.includes("mirror ="))
+
+  const off = L.cloneLayout(m.layout)
+  L.find(off, "DP-7").enabled = false
+  check("switching off its target frees the mirror", L.find(L.sanitizeMirrors(off), "DP-5").mirror, "")
+  const chain = L.cloneLayout(m.layout)
+  L.find(chain, "eDP-1").mirror = "DP-5"
+  check("a mirror of a mirror is refused", L.find(L.sanitizeMirrors(chain), "eDP-1").mirror, "")
+  mirroredBlock = m.block
+}
+
+// ------------------------------------------------------------ new monitors
+
+{
+  const dell = { name: "HDMI-A-1", description: "Dell Inc. U2720Q ABC123", width: 3840, height: 2160,
+                 refreshRate: 60, x: 7040, y: 0, scale: 1.5, transform: 0, disabled: false,
+                 availableModes: ["3840x2160@60.00Hz"] }
+  const withDell = L.parseMonitors(DESK.concat([dell]))
+  const home = L.parseBlock(adoption)
+  check("a monitor nothing has placed is new", L.newMonitors(withDell, home.rules, home.desks).map(m => m.name), ["HDMI-A-1"])
+  check("the desk's own monitors are not", L.newMonitors(live, home.rules, home.desks), [])
+  const remembered = L.parseBlock(L.deskUpdate(withDell, home.rules, home.desks, adoption))
+  check("once its desk is remembered, it is not new any more",
+        L.newMonitors(withDell, remembered.rules, remembered.desks), [])
+}
+
 // ------------------------------------------- the scripts that read the file
 
 // Copied verbatim from omarchy-hyprland-monitor-clamshell.
@@ -506,6 +551,9 @@ try {
   check("the rendered block passes the gate", py("check", "--base64", b64(adoption)).ok, true)
   // What the QML sends: the block as one argv entry, no encoding.
   check("and arrives intact as plain --text", py("check", "--text", adoption).ok, true)
+  check("a mirror rule passes the gate", py("check", "--text", mirroredBlock).ok, true)
+  check("a mirror naming something odd does not",
+        py("check", "--text", mirroredBlock.replace('mirror = "DP-7"', 'mirror = "DP 7; x"')).ok, false)
   const refused = {
     "an omarchy_monitor_scale local": adoption.replace("local gdk_scale = 1", "local omarchy_monitor_scale = 1"),
     "a computed position": adoption.replace('position = "5120x0"', 'position = string.format("%dx0", w)'),
