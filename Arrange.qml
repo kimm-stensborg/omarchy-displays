@@ -573,6 +573,8 @@ Item {
   property string focusSection: "canvas"
   property int selectedIndex: 0
   property bool cursorActive: false
+  // Set by the pointer, cleared by the keyboard: see unhoverSection.
+  property bool cursorFromMouse: false
 
   readonly property var scaleValues: root.selectedMonitor
     ? Layout.scaleOptions(root.selectedMonitor.width, root.selectedMonitor.height, root.selectedMonitor.scale) : []
@@ -663,8 +665,16 @@ Item {
 
   function hoverSection(section, index) {
     root.cursorActive = true
+    root.cursorFromMouse = true
     root.focusSection = section
     root.selectedIndex = index
+  }
+
+  // The pointer leaving what it highlighted takes the highlight with it --
+  // unless the keyboard has moved the cursor since.
+  function unhoverSection(section, index) {
+    if (root.cursorFromMouse && root.focusSection === section && root.selectedIndex === index)
+      root.cursorActive = false
   }
 
   onSectionsChanged: {
@@ -727,14 +737,16 @@ Item {
         anchors.bottomMargin: card.contentBottomInset
         blocked: resolutionDropdown.popupOpen || refreshDropdown.popupOpen || rotationDropdown.popupOpen
         onMoveRequested: function(dx, dy) {
+          root.cursorFromMouse = false
           if (!root.cursorActive) { root.cursorActive = true; return }
           if (dy !== 0) root.moveCursor(dy)
           else if (dx !== 0) root.moveCursorH(dx)
         }
         onActivateRequested: if (root.cursorActive) root.activateCursor()
         onCloseRequested: root.dismiss()
-        onTabRequested: function(direction) { root.selectAdjacent(direction) }
+        onTabRequested: function(direction) { root.cursorFromMouse = false; root.selectAdjacent(direction) }
         onTextKey: function(text) {
+          root.cursorFromMouse = false
           if (text === "i") {
             root.identify()
             return
@@ -1093,7 +1105,7 @@ Item {
                     active: root.selectedMonitor !== null && Layout.sameScale(modelData, root.selectedMonitor.scale)
                     hasCursor: root.cursorActive && root.focusSection === "scale" && root.selectedIndex === index
                     onClicked: root.setScale(modelData)
-                    onHovered: function(isHovered) { if (isHovered) root.hoverSection("scale", scalePill.index) }
+                    onHovered: function(isHovered) { if (isHovered) root.hoverSection("scale", scalePill.index); else root.unhoverSection("scale", scalePill.index) }
                   }
                 }
               }
@@ -1127,7 +1139,7 @@ Item {
                 fontFamily: root.fontFamily
                 hasCursor: root.cursorActive && root.focusSection === "resolution"
                 onChanged: function(value) { root.setResolution(value) }
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("resolution", 0) }
+                onHovered: function(isHovered) { if (isHovered) root.hoverSection("resolution", 0); else root.unhoverSection("resolution", 0) }
               }
             }
 
@@ -1157,7 +1169,7 @@ Item {
                 fontFamily: root.fontFamily
                 hasCursor: root.cursorActive && root.focusSection === "refresh"
                 onChanged: function(value) { root.setRefresh(value) }
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("refresh", 0) }
+                onHovered: function(isHovered) { if (isHovered) root.hoverSection("refresh", 0); else root.unhoverSection("refresh", 0) }
               }
             }
 
@@ -1187,7 +1199,7 @@ Item {
                 fontFamily: root.fontFamily
                 hasCursor: root.cursorActive && root.focusSection === "rotation"
                 onChanged: function(value) { root.setTransform(value) }
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("rotation", 0) }
+                onHovered: function(isHovered) { if (isHovered) root.hoverSection("rotation", 0); else root.unhoverSection("rotation", 0) }
               }
             }
 
@@ -1219,7 +1231,7 @@ Item {
                 accent: root.accent
                 hasCursor: root.cursorActive && root.focusSection === "enabled"
                 onToggled: if (root.selectedMonitor) root.setEnabled(!root.selectedMonitor.enabled)
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("enabled", 0) }
+                onHovered: function(isHovered) { if (isHovered) root.hoverSection("enabled", 0); else root.unhoverSection("enabled", 0) }
               }
               Text {
                 anchors.left: enabledSwitch.right
@@ -1276,7 +1288,7 @@ Item {
                 opacity: root.edited ? 1 : 0.45
                 hasCursor: root.cursorActive && root.focusSection === "actions" && root.selectedIndex === 0
                 onClicked: root.reset()
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("actions", 0) }
+                onHovered: function(isHovered) { if (isHovered) root.hoverSection("actions", 0); else root.unhoverSection("actions", 0) }
               }
               Button {
                 text: "Cancel"
@@ -1285,7 +1297,7 @@ Item {
                 bordered: true
                 hasCursor: root.cursorActive && root.focusSection === "actions" && root.selectedIndex === 1
                 onClicked: root.dismiss()
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("actions", 1) }
+                onHovered: function(isHovered) { if (isHovered) root.hoverSection("actions", 1); else root.unhoverSection("actions", 1) }
               }
               Button {
                 id: applyButton
@@ -1297,7 +1309,7 @@ Item {
                 opacity: root.check.ok && root.adopted ? 1 : 0.45
                 hasCursor: root.cursorActive && root.focusSection === "actions" && root.selectedIndex === 2
                 onClicked: root.apply()
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("actions", 2) }
+                onHovered: function(isHovered) { if (isHovered) root.hoverSection("actions", 2); else root.unhoverSection("actions", 2) }
               }
             }
           }

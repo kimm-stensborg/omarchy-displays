@@ -101,7 +101,7 @@ Panel {
   //   "textsize"   - single slider row, same sentinel.
   //   "scale"      - the focused display's valid scales; one row from j/k's
   //                  perspective, h/l walks it.
-    //   "arrange"    - the row that opens Setup displays.
+  //   "arrange"    - the row that opens Setup displays.
   // Mouse hover on a target updates root state, so keyboard cursor and
   // pointer share one highlight.
   readonly property var scaleValues: root.focusedDisplay
@@ -109,6 +109,13 @@ Panel {
   property string focusSection: "scale"
   property int selectedIndex: 0
   property bool cursorActive: false
+  // The cursor follows the pointer onto a row, and leaves with it -- unless
+  // the keyboard has moved it since, in which case it stays where it is.
+  property bool cursorFromMouse: false
+  function unhover(section, index) {
+    if (root.cursorFromMouse && root.focusSection === section && root.selectedIndex === index)
+      root.cursorActive = false
+  }
 
   // Text size slider — curated notches (px). The panel snaps to these stops;
   // the CLI (omarchy-display-text-size) accepts any integer in range.
@@ -615,6 +622,7 @@ Panel {
       id: keyCatcher
       anchors.fill: parent
       onMoveRequested: function(dx, dy) {
+        root.cursorFromMouse = false
         if (!root.cursorActive) { root.cursorActive = true; return }
         if (dy !== 0) root.moveCursor(dy)
         else if (dx !== 0) {
@@ -752,8 +760,11 @@ Panel {
               }
 
               HoverHandler {
-                onHoveredChanged: if (hovered && !root.reflowingText) {
+                onHoveredChanged: {
+                  if (!hovered) { root.unhover("brightness", -1); return }
+                  if (root.reflowingText) return
                   root.cursorActive = true
+                  root.cursorFromMouse = true
                   root.focusSection = "brightness"
                   root.selectedIndex = -1
                 }
@@ -824,8 +835,11 @@ Panel {
               }
 
               HoverHandler {
-                onHoveredChanged: if (hovered && !root.reflowingText) {
+                onHoveredChanged: {
+                  if (!hovered) { root.unhover("textsize", -1); return }
+                  if (root.reflowingText) return
                   root.cursorActive = true
+                  root.cursorFromMouse = true
                   root.focusSection = "textsize"
                   root.selectedIndex = -1
                 }
@@ -889,8 +903,10 @@ Panel {
 
                   onClicked: root.setScale(pill.modelData)
                   onHovered: function(isHovered) {
-                    if (!isHovered || root.reflowingText) return
+                    if (!isHovered) { root.unhover("scale", pill.index); return }
+                    if (root.reflowingText) return
                     root.cursorActive = true
+                    root.cursorFromMouse = true
                     root.focusSection = "scale"
                     root.selectedIndex = pill.index
                   }
@@ -984,8 +1000,11 @@ Panel {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              onContainsMouseChanged: if (containsMouse && !root.reflowingText) {
+              onContainsMouseChanged: {
+                if (!containsMouse) { root.unhover("arrange", 0); return }
+                if (root.reflowingText) return
                 root.cursorActive = true
+                root.cursorFromMouse = true
                 root.focusSection = "arrange"
                 root.selectedIndex = 0
               }
