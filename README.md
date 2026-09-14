@@ -1,8 +1,7 @@
 # Displays
 
-Arrange your monitors and set scale, resolution, refresh rate and rotation per
-monitor in Omarchy, and have it stick. It replaces the built-in Display panel,
-whose scale changes undo themselves a few seconds later.
+Arrange multiple monitors and set scale, resolution, refresh rate and rotation
+per monitor in Omarchy.
 
 ![Displays](preview.png)
 
