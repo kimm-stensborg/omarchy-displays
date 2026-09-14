@@ -1065,13 +1065,15 @@ Item {
                 textFormat: Text.PlainText
               }
 
-              Flow {
+              Grid {
                 id: scaleRow
                 anchors.left: parent.left
                 anchors.leftMargin: root.labelWidth
-                anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
+                columns: Math.max(1, root.scaleValues.length)
                 spacing: Style.spacing.xs
+                // Every button the same width, wide enough for "1.25x".
+                readonly property real cellWidth: Style.space(58)
 
                 Repeater {
                   model: root.scaleValues
@@ -1080,6 +1082,7 @@ Item {
                     id: scalePill
                     required property var modelData
                     required property int index
+                    width: scaleRow.cellWidth
                     text: Layout.scaleLabel(modelData) + "x"
                     fontSize: Style.font.caption
                     foreground: root.foreground

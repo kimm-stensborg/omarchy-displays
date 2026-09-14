@@ -113,18 +113,25 @@ const positions = (layout) => layout.filter(m => m.enabled).map(m => [m.name, m.
 // -------------------------------------------------------------- scale math
 
 check("g for 2560x1440", L.modeDivisor(2560, 1440), 19200)
-check("2560x1440 ladder", L.scaleLadder(2560, 1440).map(L.scaleLabel),
-      ["1", "1.0667", "1.25", "1.3333", "1.6", "1.6667", "2", "2.1333", "2.5", "2.6667", "3.2", "3.3333", "4"])
+// In 1/120 steps: 1, 1.0667, 1.25, 1.3333, 1.6, 1.6667, 2, 2.1333, 2.5,
+// 2.6667, 3.2, 3.3333, 4 -- checked exactly, not through the rounded labels.
+check("2560x1440 ladder", L.scaleLadder(2560, 1440).map(L.scaleUnits),
+      [120, 128, 150, 160, 192, 200, 240, 256, 300, 320, 384, 400, 480])
+check("labels never show more than two decimals", L.scaleLadder(2560, 1440).map(L.scaleLabel),
+      ["1", "1.07", "1.25", "1.33", "1.6", "1.67", "2", "2.13", "2.5", "2.67", "3.2", "3.33", "4"])
+for (const [w, h] of [[2560, 1440], [1920, 1200], [3840, 2160], [2880, 1800]])
+  ok(`${w}x${h}: every label has at most two decimals`,
+     L.scaleLadder(w, h).every(s => /^[0-9]+([.][0-9]{1,2})?$/.test(L.scaleLabel(s))))
 check("1.5 is not valid at 2560x1440", L.isValidScale(1.5, 2560, 1440), false)
 check("1.5 rounds up to 1.6", L.scaleLabel(L.cleanScale(1.5, 2560, 1440)), "1.6")
 check("3 rounds up to 3.2", L.scaleLabel(L.cleanScale(3, 2560, 1440)), "3.2")
-check("never rounds down", L.scaleLabel(L.cleanScale(1.26, 2560, 1440)), "1.3333")
+check("never rounds down", L.scaleUnits(L.cleanScale(1.26, 2560, 1440)), 160)
 
 check("g for 1920x1200", L.modeDivisor(1920, 1200), 28800)
 {
-  const ladder = L.scaleLadder(1920, 1200).map(L.scaleLabel)
-  for (const s of ["1", "1.2", "1.25", "1.3333", "1.5", "1.6", "1.875", "2", "2.4", "2.5", "3", "3.2", "3.75", "4"])
-    ok(`1920x1200 ladder has ${s}`, ladder.includes(s))
+  const ladder = L.scaleLadder(1920, 1200).map(L.scaleUnits)
+  for (const s of [1, 1.2, 1.25, 4 / 3, 1.5, 1.6, 1.875, 2, 2.4, 2.5, 3, 3.2, 3.75, 4])
+    ok(`1920x1200 ladder has ${L.scaleLabel(s)}`, ladder.includes(L.scaleUnits(s)))
   check("1.5 is valid at 1920x1200", L.isValidScale(1.5, 1920, 1200), true)
   check("3 is valid at 1920x1200", L.isValidScale(3, 1920, 1200), true)
   check("and stays put", L.cleanScale(3, 1920, 1200), 3)
@@ -134,10 +141,10 @@ const PRESETS = ["1", "1.25", "1.6", "2", "2.5", "3.2", "4"]
 check("offered at 2560x1440", L.scaleOptions(2560, 1440, 1).map(L.scaleLabel), PRESETS)
 check("offered at 1920x1200", L.scaleOptions(1920, 1200, 1).map(L.scaleLabel), PRESETS)
 check("a preset the mode can't do is offered as what it rounds up to",
-      L.scaleOptions(1920, 1080, 1).map(L.scaleLabel), ["1", "1.25", "1.6", "2", "2.5", "3.3333", "4"])
+      L.scaleOptions(1920, 1080, 1).map(L.scaleLabel), ["1", "1.25", "1.6", "2", "2.5", "3.33", "4"])
 check("an off-list current scale is still shown",
       L.scaleOptions(2560, 1440, 1.0666667).map(L.scaleLabel),
-      ["1", "1.0667", "1.25", "1.6", "2", "2.5", "3.2", "4"])
+      ["1", "1.07", "1.25", "1.6", "2", "2.5", "3.2", "4"])
 check("an on-list current scale adds nothing", L.scaleOptions(2560, 1440, 1.6).length, 7)
 check("no mode, no options", L.scaleOptions(0, 0, 1), [])
 

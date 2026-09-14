@@ -146,10 +146,11 @@ function formatScale(scale) {
   return trimNumber((k / UNITS).toFixed(6))
 }
 
-// What goes on a button.
+// What goes on a button: two decimals at most, so 1.0666667 reads 1.07. The
+// exact value only ever goes into the file (formatScale).
 function scaleLabel(scale) {
   var k = scaleUnits(scale)
-  return k ? trimNumber((k / UNITS).toFixed(4)) : ""
+  return k ? trimNumber((k / UNITS).toFixed(2)) : ""
 }
 
 function sameScale(a, b) {
