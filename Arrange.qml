@@ -106,7 +106,6 @@ Item {
   readonly property color hairline: Qt.rgba(foreground.r, foreground.g, foreground.b, 0.25)
   readonly property string fontFamily: Style.font.menuFamily
   readonly property int contentMargin: Style.spacing.panelPadding
-  readonly property int labelWidth: Style.space(110)
 
   // ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -589,7 +588,8 @@ Item {
       maxX = Math.max(maxX, rects[i].x + rects[i].width)
       maxY = Math.max(maxY, rects[i].y + rects[i].height)
     }
-    var pad = Math.max(maxX - minX, maxY - minY) * 0.18
+    // A slim margin: the canvas is sized to the desk, so the boxes fill it.
+    var pad = Math.max(maxX - minX, maxY - minY) * 0.05
     root.viewBounds = { x: minX - pad, y: minY - pad, width: maxX - minX + pad * 2, height: maxY - minY + pad * 2 }
   }
 
@@ -928,41 +928,64 @@ Item {
           width: parent.width
           spacing: Style.spacing.panelGap
 
-          // ---------- header ----------
-          Column {
+          // ---------- header: title, and Identify beside it ----------
+          Item {
             width: parent.width
-            spacing: Style.space(2)
+            implicitHeight: Math.max(titleColumn.implicitHeight, identifyButton.implicitHeight)
 
-            Text {
-              text: "Setup displays"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              font.bold: true
-              textFormat: Text.PlainText
+            Column {
+              id: titleColumn
+              anchors.left: parent.left
+              anchors.right: identifyButton.left
+              anchors.rightMargin: Style.spacing.lg
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(2)
+
+              Text {
+                text: "Setup displays"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+                textFormat: Text.PlainText
+              }
+              Text {
+                width: parent.width
+                text: "Drag your displays to match your desk."
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+              }
             }
-            Text {
-              width: parent.width
-              text: "Drag to arrange. Apply writes monitors.lua; unless you keep the result, it reverts after "
-                    + root.confirmSeconds + " seconds."
-              color: root.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              wrapMode: Text.WordWrap
-              textFormat: Text.PlainText
+
+            Button {
+              id: identifyButton
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Identify"
+              fontSize: Style.font.caption
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              bordered: true
+              onClicked: root.identify()
             }
           }
 
           // ---------- the desk ----------
+          // Sized to the desk's own shape, so the boxes are as large as the
+          // card allows. Not clipped: a box dragged past the edge stays in
+          // sight, and the canvas reframes once it is let go.
           Rectangle {
             id: stage
             width: parent.width
-            height: Math.max(Style.space(220), Math.min(Style.space(380), width * 0.42))
+            height: Math.max(Style.space(160), Math.min(Style.space(360),
+                      width * root.viewBounds.height / Math.max(1, root.viewBounds.width)))
             radius: Style.cornerRadius
-            color: "transparent"
-            border.width: root.cursorActive && root.focusSection === "canvas" ? 1 : 0
-            border.color: root.hairline
-            clip: true
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.03)
+            border.width: 1
+            border.color: root.cursorActive && root.focusSection === "canvas" ? root.hairline : "transparent"
 
             readonly property real factor: Math.min(width / root.viewBounds.width, height / root.viewBounds.height)
             readonly property real originX: (width - root.viewBounds.width * factor) / 2 - root.viewBounds.x * factor
@@ -1022,6 +1045,7 @@ Item {
                 height: Math.max(1, box.rect.height * stage.factor)
                 z: box.dragged ? 3 : (box.isSelected ? 1 : 0)
                 opacity: box.dragged ? 0.8 : 1
+                clip: true
 
                 Behavior on x {
                   enabled: box.settled && !box.dragged
@@ -1032,13 +1056,13 @@ Item {
                   NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
                 }
                 radius: Style.cornerRadius
-                color: box.isSelected ? Style.selectedFillFor(root.foreground, root.accent) : Style.normalFill
+                color: Style.normalFill
                 border.width: box.isSelected ? 2 : 1
                 border.color: box.isSelected ? root.accent : root.hairline
 
-                // What is on this screen right now, dimmed so the labels read.
-                // Hidden while an unapplied rotation or resolution change has
-                // given the box a different shape from the picture.
+                // What is on this screen right now. Hidden while an unapplied
+                // rotation or resolution change has given the box a different
+                // shape from the picture.
                 Item {
                   id: shotLayer
                   anchors.fill: parent
@@ -1069,44 +1093,47 @@ Item {
                     fillMode: Image.Stretch
                     sourceSize.width: 640
                   }
-
-                  Rectangle {
-                    anchors.fill: parent
-                    color: root.background
-                    opacity: box.isSelected ? 0.45 : 0.6
-                  }
                 }
 
-                Column {
-                  anchors.centerIn: parent
-                  width: parent.width - Style.spacing.md * 2
-                  spacing: Style.space(2)
+                // The name, on a solid strip so it reads over any picture.
+                Rectangle {
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.bottom: parent.bottom
+                  anchors.margins: box.border.width
+                  height: stripName.implicitHeight + Style.spacing.sm * 2
+                  color: Qt.rgba(root.background.r, root.background.g, root.background.b, 0.88)
 
                   Text {
-                    width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
+                    id: focusDot
+                    anchors.left: parent.left
+                    anchors.leftMargin: Style.spacing.sm
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: box.mon !== null && box.mon.focused
+                    width: visible ? implicitWidth : 0
+                    text: "●"
+                    color: root.accent
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    id: stripName
+                    anchors.left: focusDot.right
+                    anchors.leftMargin: focusDot.visible ? Style.spacing.xs : Style.spacing.sm
+                    anchors.verticalCenter: parent.verticalCenter
                     text: Layout.displayName(box.mon)
                     color: root.foreground
                     font.family: root.fontFamily
-                    font.pixelSize: Style.font.body
-                    font.bold: true
-                    elide: Text.ElideRight
-                    textFormat: Text.PlainText
-                  }
-                  Text {
-                    width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
-                    text: box.mon ? box.mon.name + (box.mon.focused ? " · focused" : "") : ""
-                    color: root.muted
-                    font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
-                    elide: Text.ElideRight
+                    font.bold: true
                     textFormat: Text.PlainText
                   }
                   Text {
-                    width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
-                    text: box.rect.width + " × " + box.rect.height + " · " + (box.mon ? Layout.scaleLabel(box.mon.scale) : "") + "x"
+                    anchors.left: stripName.right
+                    anchors.leftMargin: Style.spacing.sm
+                    anchors.right: parent.right
+                    anchors.rightMargin: Style.spacing.sm
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: box.mon ? box.mon.name + " · " + Layout.scaleLabel(box.mon.scale) + "x" : ""
                     color: root.muted
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -1153,9 +1180,11 @@ Item {
             }
 
             // Placing a new monitor: it follows the pointer, and a click drops
-            // it where the ghost is.
+            // it where the ghost is. Reaches a little past the canvas, so the
+            // monitor can go beyond the ends of the desk.
             MouseArea {
               anchors.fill: parent
+              anchors.margins: -Style.space(80)
               z: 10
               visible: root.placing !== ""
               hoverEnabled: true
@@ -1164,9 +1193,10 @@ Item {
                 var m = Layout.find(root.working, root.placing)
                 if (!m) return
                 var size = Layout.logicalSize(m)
+                var at = mapToItem(stage, mouse.x, mouse.y)
                 root.dragTo(root.placing,
-                            (mouse.x - stage.originX) / stage.factor - size.width / 2,
-                            (mouse.y - stage.originY) / stage.factor - size.height / 2,
+                            (at.x - stage.originX) / stage.factor - size.width / 2,
+                            (at.y - stage.originY) / stage.factor - size.height / 2,
                             Style.space(18) / stage.factor)
               }
               onClicked: {
@@ -1178,14 +1208,14 @@ Item {
             }
           }
 
-          // ---------- displays that are off ----------
+          // ---------- displays with no box: off, or mirroring ----------
           Row {
             visible: root.offMonitors.length > 0
             spacing: Style.spacing.sm
 
             Text {
               anchors.verticalCenter: parent.verticalCenter
-              text: "Not on the desk:"
+              text: "Not on the desk"
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -1226,310 +1256,345 @@ Item {
           // ---------- the selected display ----------
           Column {
             width: parent.width
-            spacing: Style.spacing.md
+            spacing: Style.spacing.xl
             visible: root.selectedMonitor !== null
 
-            Text {
-              text: root.selectedMonitor
-                ? Layout.displayName(root.selectedMonitor) + " · " + root.selectedMonitor.name
-                  + (root.selectedMonitor.description && !root.selectedMonitor.internal
-                     ? " · " + root.selectedMonitor.description : "")
-                : ""
+            // Its name, what it is, and whether it is on.
+            Item {
               width: parent.width
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-              font.bold: true
-              elide: Text.ElideRight
-              textFormat: Text.PlainText
-            }
+              implicitHeight: Math.max(headingText.implicitHeight, onRow.implicitHeight)
 
-            // Scale: only the scales this mode can actually do.
-            CursorSurface {
-              width: parent.width
-              visible: root.selectedMonitor !== null && root.selectedMonitor.enabled
-              height: scaleRow.implicitHeight + Style.spacing.sm * 2
-              hasCursor: false
-              foreground: root.foreground
-
-              Text {
+              Column {
+                id: headingText
                 anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.topMargin: Style.spacing.sm + Style.spacing.controlPaddingY
-                width: root.labelWidth
-                text: "SCALE"
-                color: root.muted
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1.2
-                textFormat: Text.PlainText
-              }
-
-              Grid {
-                id: scaleRow
-                anchors.left: parent.left
-                anchors.leftMargin: root.labelWidth
+                anchors.right: onRow.left
+                anchors.rightMargin: Style.spacing.lg
                 anchors.verticalCenter: parent.verticalCenter
-                columns: Math.max(1, root.scaleValues.length)
-                spacing: Style.spacing.xs
-                // Every button the same width, wide enough for "1.25x".
-                readonly property real cellWidth: Style.space(58)
+                spacing: Style.space(2)
 
-                Repeater {
-                  model: root.scaleValues
-
-                  Button {
-                    id: scalePill
-                    required property var modelData
-                    required property int index
-                    width: scaleRow.cellWidth
-                    text: Layout.scaleLabel(modelData) + "x"
-                    fontSize: Style.font.caption
-                    foreground: root.foreground
-                    fontFamily: root.fontFamily
-                    horizontalPadding: Style.spacing.sm
-                    verticalPadding: Style.spacing.controlPaddingY
-                    bordered: true
-                    active: root.selectedMonitor !== null && Layout.sameScale(modelData, root.selectedMonitor.scale)
-                    hasCursor: root.cursorActive && root.focusSection === "scale" && root.selectedIndex === index
-                    onClicked: root.setScale(modelData)
-                    onHovered: function(isHovered) { if (isHovered) root.hoverSection("scale", scalePill.index); else root.unhoverSection("scale", scalePill.index) }
+                Text {
+                  width: parent.width
+                  text: root.selectedMonitor ? Layout.displayName(root.selectedMonitor) : ""
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.subtitle
+                  font.bold: true
+                  elide: Text.ElideRight
+                  textFormat: Text.PlainText
+                }
+                Text {
+                  width: parent.width
+                  text: {
+                    var m = root.selectedMonitor
+                    if (!m) return ""
+                    var parts = [m.name]
+                    if (m.serial) parts.push(m.serial)
+                    if (m.internal) parts.push("built-in, switches on and off at once")
+                    if (m.mirror) parts.push("shows " + m.mirror)
+                    if (!m.enabled) parts.push("off")
+                    return parts.join(" · ")
                   }
+                  color: root.muted
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  elide: Text.ElideRight
+                  textFormat: Text.PlainText
                 }
               }
-            }
 
-            // Resolution, refresh rate and rotation: h/l cycles through the
-            // options without opening the list; a click opens it.
-            Item {
-              width: parent.width
-              height: resolutionDropdown.implicitHeight
-              visible: root.selectedMonitor !== null && root.selectedMonitor.enabled
-
-              Text {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: "RESOLUTION"
-                color: root.muted
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1.2
-                textFormat: Text.PlainText
-              }
-              Dropdown {
-                id: resolutionDropdown
-                anchors.left: parent.left
-                anchors.leftMargin: root.labelWidth
-                showLabel: false
-                options: root.resolutionOptions
-                value: root.selectedMonitor ? root.selectedMonitor.width + "x" + root.selectedMonitor.height : ""
-                fontFamily: root.fontFamily
-                hasCursor: root.cursorActive && root.focusSection === "resolution"
-                onChanged: function(value) { root.setResolution(value) }
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("resolution", 0); else root.unhoverSection("resolution", 0) }
-              }
-            }
-
-            Item {
-              width: parent.width
-              height: refreshDropdown.implicitHeight
-              visible: root.selectedMonitor !== null && root.selectedMonitor.enabled
-
-              Text {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: "REFRESH"
-                color: root.muted
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1.2
-                textFormat: Text.PlainText
-              }
-              Dropdown {
-                id: refreshDropdown
-                anchors.left: parent.left
-                anchors.leftMargin: root.labelWidth
-                showLabel: false
-                options: root.refreshOptions
-                value: root.selectedMonitor ? String(root.selectedMonitor.refresh) : ""
-                fontFamily: root.fontFamily
-                hasCursor: root.cursorActive && root.focusSection === "refresh"
-                onChanged: function(value) { root.setRefresh(value) }
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("refresh", 0); else root.unhoverSection("refresh", 0) }
-              }
-            }
-
-            Item {
-              width: parent.width
-              height: rotationDropdown.implicitHeight
-              visible: root.selectedMonitor !== null && root.selectedMonitor.enabled
-
-              Text {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: "ROTATION"
-                color: root.muted
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1.2
-                textFormat: Text.PlainText
-              }
-              Dropdown {
-                id: rotationDropdown
-                anchors.left: parent.left
-                anchors.leftMargin: root.labelWidth
-                showLabel: false
-                options: root.rotationOptions
-                value: root.selectedMonitor ? String(root.selectedMonitor.transform) : "0"
-                fontFamily: root.fontFamily
-                hasCursor: root.cursorActive && root.focusSection === "rotation"
-                onChanged: function(value) { root.setTransform(value) }
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("rotation", 0); else root.unhoverSection("rotation", 0) }
-              }
-            }
-
-            Item {
-              width: parent.width
-              height: mirrorDropdown.implicitHeight
-              visible: root.mirrorOptions.length > 1 && root.selectedMonitor !== null && root.selectedMonitor.enabled
-
-              Text {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: "MIRROR"
-                color: root.muted
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1.2
-                textFormat: Text.PlainText
-              }
-              Dropdown {
-                id: mirrorDropdown
-                anchors.left: parent.left
-                anchors.leftMargin: root.labelWidth
-                showLabel: false
-                options: root.mirrorOptions
-                value: root.selectedMonitor ? String(root.selectedMonitor.mirror || "") : ""
-                fontFamily: root.fontFamily
-                hasCursor: root.cursorActive && root.focusSection === "mirror"
-                onChanged: function(value) { root.setMirror(value) }
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("mirror", 0); else root.unhoverSection("mirror", 0) }
-              }
-            }
-
-            // Brightness goes to the display at once; it is not part of Apply.
-            Item {
-              width: parent.width
-              height: brightnessRow.height
-              visible: root.brightnessAvailable && root.selectedMonitor !== null && root.selectedMonitor.enabled
-
-              Text {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: "BRIGHTNESS"
-                color: root.muted
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1.2
-                textFormat: Text.PlainText
-              }
-              CursorSurface {
-                id: brightnessRow
-                anchors.left: parent.left
-                anchors.leftMargin: root.labelWidth
-                width: Style.space(260)
-                height: brightnessSlider.implicitHeight + Style.spacing.controlGap
-                hasCursor: root.cursorActive && root.focusSection === "brightness"
-                foreground: root.foreground
-                outline: true
-
-                PanelSlider {
-                  id: brightnessSlider
-                  anchors.fill: parent
-                  anchors.leftMargin: Style.space(6)
-                  anchors.rightMargin: Style.space(6)
-                  minimum: 1
-                  maximum: 100
-                  step: 1
-                  integer: true
-                  value: root.brightnessPercent
-                  trackColor: Style.selectedFillFor(root.foreground, root.accent)
-                  fillColor: root.foreground
-                  knobColor: root.foreground
-                  onMoved: function(v) { root.previewBrightness(v) }
-                  onReleased: function(v) {
-                    brightnessDebounce.stop()
-                    root.setBrightness(v)
-                  }
-                }
-
-                HoverHandler {
-                  onHoveredChanged: {
-                    if (hovered) root.hoverSection("brightness", 0)
-                    else root.unhoverSection("brightness", 0)
-                  }
-                }
-              }
-              Text {
-                anchors.left: brightnessRow.right
-                anchors.leftMargin: Style.spacing.lg
-                anchors.verticalCenter: parent.verticalCenter
-                text: Math.round(brightnessSlider.dragging ? brightnessSlider.liveValue : root.brightnessPercent) + "%"
-                color: root.muted
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                textFormat: Text.PlainText
-              }
-            }
-
-            Item {
-              width: parent.width
-              height: enabledSwitch.implicitHeight
-
-              Text {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: "ON"
-                color: root.muted
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1.2
-                textFormat: Text.PlainText
-              }
-              ToggleSwitch {
-                id: enabledSwitch
-                anchors.left: parent.left
-                anchors.leftMargin: root.labelWidth
-                checked: root.selectedMonitor !== null && root.selectedMonitor.enabled
-                busy: internalProc.running
-                // The last display on cannot be switched off from here.
-                interactive: root.selectedMonitor !== null
-                  && (!root.selectedMonitor.enabled || root.enabledCount > 1)
-                foreground: root.foreground
-                accent: root.accent
-                hasCursor: root.cursorActive && root.focusSection === "enabled"
-                onToggled: if (root.selectedMonitor) root.setEnabled(!root.selectedMonitor.enabled)
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("enabled", 0); else root.unhoverSection("enabled", 0) }
-              }
-              Text {
-                anchors.left: enabledSwitch.right
-                anchors.leftMargin: Style.spacing.lg
+              Row {
+                id: onRow
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                visible: root.selectedMonitor !== null && root.selectedMonitor.internal
-                text: "Uses Omarchy's laptop display toggle, and takes effect at once"
-                color: root.muted
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                elide: Text.ElideRight
-                textFormat: Text.PlainText
+                spacing: Style.spacing.md
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: "On"
+                  color: root.muted
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  textFormat: Text.PlainText
+                }
+                ToggleSwitch {
+                  id: enabledSwitch
+                  anchors.verticalCenter: parent.verticalCenter
+                  checked: root.selectedMonitor !== null && root.selectedMonitor.enabled
+                  busy: internalProc.running
+                  // The last display on cannot be switched off from here.
+                  interactive: root.selectedMonitor !== null
+                    && (!root.selectedMonitor.enabled || root.enabledCount > 1)
+                  foreground: root.foreground
+                  accent: root.accent
+                  hasCursor: root.cursorActive && root.focusSection === "enabled"
+                  onToggled: if (root.selectedMonitor) root.setEnabled(!root.selectedMonitor.enabled)
+                  onHovered: function(isHovered) { if (isHovered) root.hoverSection("enabled", 0); else root.unhoverSection("enabled", 0) }
+                }
+              }
+            }
+
+            // Picture on the left, signal on the right; every control the
+            // same width within its column.
+            Row {
+              id: columns
+              width: parent.width
+              spacing: Style.space(32)
+              visible: root.selectedMonitor !== null && root.selectedMonitor.enabled
+
+              readonly property real colWidth: (width - spacing) / 2
+              readonly property real labelW: Style.space(88)
+              readonly property real controlW: colWidth - labelW
+
+              Column {
+                width: columns.colWidth
+                spacing: Style.spacing.md
+
+                PanelSectionHeader {
+                  text: "PICTURE"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+
+                Item {
+                  width: parent.width
+                  height: scaleRow.implicitHeight
+
+                  Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Scale"
+                    color: root.muted
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    textFormat: Text.PlainText
+                  }
+                  Grid {
+                    id: scaleRow
+                    anchors.left: parent.left
+                    anchors.leftMargin: columns.labelW
+                    anchors.verticalCenter: parent.verticalCenter
+                    columns: Math.max(1, root.scaleValues.length)
+                    spacing: Style.spacing.xs
+                    // Equal buttons, sharing the column's width.
+                    readonly property real cellWidth: root.scaleValues.length
+                      ? (columns.controlW - spacing * (root.scaleValues.length - 1)) / root.scaleValues.length : 0
+
+                    Repeater {
+                      model: root.scaleValues
+
+                      Button {
+                        id: scalePill
+                        required property var modelData
+                        required property int index
+                        width: scaleRow.cellWidth
+                        text: Layout.scaleLabel(modelData) + "x"
+                        fontSize: Style.font.caption
+                        foreground: root.foreground
+                        fontFamily: root.fontFamily
+                        horizontalPadding: Style.spacing.xs
+                        verticalPadding: Style.spacing.controlPaddingY
+                        bordered: true
+                        active: root.selectedMonitor !== null && Layout.sameScale(modelData, root.selectedMonitor.scale)
+                        hasCursor: root.cursorActive && root.focusSection === "scale" && root.selectedIndex === index
+                        onClicked: root.setScale(modelData)
+                        onHovered: function(isHovered) { if (isHovered) root.hoverSection("scale", scalePill.index); else root.unhoverSection("scale", scalePill.index) }
+                      }
+                    }
+                  }
+                }
+
+                // Brightness goes to the display at once; it is not part of Apply.
+                Item {
+                  width: parent.width
+                  height: brightnessRow.height
+                  visible: root.brightnessAvailable
+
+                  Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Brightness"
+                    color: root.muted
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    textFormat: Text.PlainText
+                  }
+                  CursorSurface {
+                    id: brightnessRow
+                    anchors.left: parent.left
+                    anchors.leftMargin: columns.labelW
+                    anchors.right: brightnessValue.left
+                    anchors.rightMargin: Style.spacing.md
+                    height: brightnessSlider.implicitHeight + Style.spacing.controlGap
+                    hasCursor: root.cursorActive && root.focusSection === "brightness"
+                    foreground: root.foreground
+                    outline: true
+
+                    PanelSlider {
+                      id: brightnessSlider
+                      anchors.fill: parent
+                      anchors.leftMargin: Style.space(6)
+                      anchors.rightMargin: Style.space(6)
+                      minimum: 1
+                      maximum: 100
+                      step: 1
+                      integer: true
+                      value: root.brightnessPercent
+                      trackColor: Style.selectedFillFor(root.foreground, root.accent)
+                      fillColor: root.foreground
+                      knobColor: root.foreground
+                      onMoved: function(v) { root.previewBrightness(v) }
+                      onReleased: function(v) {
+                        brightnessDebounce.stop()
+                        root.setBrightness(v)
+                      }
+                    }
+
+                    HoverHandler {
+                      onHoveredChanged: {
+                        if (hovered) root.hoverSection("brightness", 0)
+                        else root.unhoverSection("brightness", 0)
+                      }
+                    }
+                  }
+                  Text {
+                    id: brightnessValue
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Style.space(40)
+                    horizontalAlignment: Text.AlignRight
+                    text: Math.round(brightnessSlider.dragging ? brightnessSlider.liveValue : root.brightnessPercent) + "%"
+                    color: root.muted
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    textFormat: Text.PlainText
+                  }
+                }
+              }
+
+              Column {
+                width: columns.colWidth
+                spacing: Style.spacing.md
+
+                PanelSectionHeader {
+                  text: "SIGNAL"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+
+                // h/l cycles through the options without opening the list;
+                // a click opens it.
+                Item {
+                  width: parent.width
+                  height: resolutionDropdown.implicitHeight
+
+                  Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Resolution"
+                    color: root.muted
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    textFormat: Text.PlainText
+                  }
+                  Dropdown {
+                    id: resolutionDropdown
+                    anchors.left: parent.left
+                    anchors.leftMargin: columns.labelW
+                    width: columns.controlW
+                    showLabel: false
+                    options: root.resolutionOptions
+                    value: root.selectedMonitor ? root.selectedMonitor.width + "x" + root.selectedMonitor.height : ""
+                    fontFamily: root.fontFamily
+                    hasCursor: root.cursorActive && root.focusSection === "resolution"
+                    onChanged: function(value) { root.setResolution(value) }
+                    onHovered: function(isHovered) { if (isHovered) root.hoverSection("resolution", 0); else root.unhoverSection("resolution", 0) }
+                  }
+                }
+
+                Item {
+                  width: parent.width
+                  height: refreshDropdown.implicitHeight
+
+                  Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Refresh"
+                    color: root.muted
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    textFormat: Text.PlainText
+                  }
+                  Dropdown {
+                    id: refreshDropdown
+                    anchors.left: parent.left
+                    anchors.leftMargin: columns.labelW
+                    width: columns.controlW
+                    showLabel: false
+                    options: root.refreshOptions
+                    value: root.selectedMonitor ? String(root.selectedMonitor.refresh) : ""
+                    fontFamily: root.fontFamily
+                    hasCursor: root.cursorActive && root.focusSection === "refresh"
+                    onChanged: function(value) { root.setRefresh(value) }
+                    onHovered: function(isHovered) { if (isHovered) root.hoverSection("refresh", 0); else root.unhoverSection("refresh", 0) }
+                  }
+                }
+
+                Item {
+                  width: parent.width
+                  height: rotationDropdown.implicitHeight
+
+                  Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Rotation"
+                    color: root.muted
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    textFormat: Text.PlainText
+                  }
+                  Dropdown {
+                    id: rotationDropdown
+                    anchors.left: parent.left
+                    anchors.leftMargin: columns.labelW
+                    width: columns.controlW
+                    showLabel: false
+                    options: root.rotationOptions
+                    value: root.selectedMonitor ? String(root.selectedMonitor.transform) : "0"
+                    fontFamily: root.fontFamily
+                    hasCursor: root.cursorActive && root.focusSection === "rotation"
+                    onChanged: function(value) { root.setTransform(value) }
+                    onHovered: function(isHovered) { if (isHovered) root.hoverSection("rotation", 0); else root.unhoverSection("rotation", 0) }
+                  }
+                }
+
+                Item {
+                  width: parent.width
+                  height: mirrorDropdown.implicitHeight
+                  visible: root.mirrorOptions.length > 1
+
+                  Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Mirror"
+                    color: root.muted
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    textFormat: Text.PlainText
+                  }
+                  Dropdown {
+                    id: mirrorDropdown
+                    anchors.left: parent.left
+                    anchors.leftMargin: columns.labelW
+                    width: columns.controlW
+                    showLabel: false
+                    options: root.mirrorOptions
+                    value: root.selectedMonitor ? String(root.selectedMonitor.mirror || "") : ""
+                    fontFamily: root.fontFamily
+                    hasCursor: root.cursorActive && root.focusSection === "mirror"
+                    onChanged: function(value) { root.setMirror(value) }
+                    onHovered: function(isHovered) { if (isHovered) root.hoverSection("mirror", 0); else root.unhoverSection("mirror", 0) }
+                  }
+                }
               }
             }
           }
@@ -1539,12 +1604,29 @@ Item {
             width: parent.width
             height: applyButton.implicitHeight
 
-            Text {
+            Button {
+              id: resetButton
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
+              text: "Reset"
+              foreground: root.muted
+              fontFamily: root.fontFamily
+              bordered: false
+              opacity: root.edited ? 1 : 0.4
+              hasCursor: root.cursorActive && root.focusSection === "actions" && root.selectedIndex === 0
+              onClicked: root.reset()
+              onHovered: function(isHovered) { if (isHovered) root.hoverSection("actions", 0); else root.unhoverSection("actions", 0) }
+            }
+
+            // Only once the keyboard is in use.
+            Text {
+              anchors.left: resetButton.right
+              anchors.leftMargin: Style.spacing.lg
               anchors.right: actions.left
               anchors.rightMargin: Style.spacing.lg
-              text: "h/l or Tab pick a display · Shift+H/J/K/L move it · j/k walk the settings · i identify"
+              anchors.verticalCenter: parent.verticalCenter
+              visible: root.cursorActive && !root.cursorFromMouse
+              text: "h/l pick · Shift+H/J/K/L move · j/k settings · i identify"
               color: root.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -1559,23 +1641,6 @@ Item {
               spacing: Style.spacing.md
 
               Button {
-                text: "Identify"
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                bordered: true
-                onClicked: root.identify()
-              }
-              Button {
-                text: "Reset"
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                bordered: true
-                opacity: root.edited ? 1 : 0.45
-                hasCursor: root.cursorActive && root.focusSection === "actions" && root.selectedIndex === 0
-                onClicked: root.reset()
-                onHovered: function(isHovered) { if (isHovered) root.hoverSection("actions", 0); else root.unhoverSection("actions", 0) }
-              }
-              Button {
                 text: "Cancel"
                 foreground: root.foreground
                 fontFamily: root.fontFamily
@@ -1584,13 +1649,16 @@ Item {
                 onClicked: root.dismiss()
                 onHovered: function(isHovered) { if (isHovered) root.hoverSection("actions", 1); else root.unhoverSection("actions", 1) }
               }
+              // The one filled button, when there is something to apply.
               Button {
                 id: applyButton
+                readonly property bool ready: root.dirty && root.check.ok && root.adopted
                 text: root.busy ? "Applying…" : "Apply"
-                foreground: root.foreground
+                foreground: ready ? root.background : root.foreground
+                background: ready ? root.accent : "transparent"
+                accent: root.accent
                 fontFamily: root.fontFamily
                 bordered: true
-                active: root.dirty && root.check.ok
                 opacity: root.check.ok && root.adopted ? 1 : 0.45
                 hasCursor: root.cursorActive && root.focusSection === "actions" && root.selectedIndex === 2
                 onClicked: root.apply()
