@@ -391,6 +391,8 @@ try {
 
   // ------------------------------------------------------------ the gate
   check("the rendered block passes the gate", py("check", "--base64", b64(adoption)).ok, true)
+  // What the QML sends: the block as one argv entry, no encoding.
+  check("and arrives intact as plain --text", py("check", "--text", adoption).ok, true)
   const refused = {
     "an omarchy_monitor_scale local": adoption.replace("local gdk_scale = 1", "local omarchy_monitor_scale = 1"),
     "a computed position": adoption.replace('position = "5120x0"', 'position = string.format("%dx0", w)'),

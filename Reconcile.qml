@@ -86,7 +86,7 @@ Item {
   function step(next) {
     root.stage = next
     if (next === "recover") startProc.command = root.py(["recover"])
-    else if (next === "adopt") startProc.command = root.py(["adopt", "--base64", Qt.btoa(Layout.adoptionBlock(root.live))])
+    else if (next === "adopt") startProc.command = root.py(["adopt", "--text", Layout.adoptionBlock(root.live)])
     else if (next === "retire") startProc.command = root.py(["retire"])
     else if (next === "menu") startProc.command = root.py(["menu"])
     else {
@@ -281,7 +281,7 @@ Item {
     root.lastWritten = key
     root.lastWrittenAt = Date.now()
     console.info(root.pluginId, "recording out-of-band scale:", key)
-    writeProc.command = root.py(["write", "--base64", Qt.btoa(result.block)])
+    writeProc.command = root.py(["write", "--text", result.block])
     writeProc.running = true
   }
 

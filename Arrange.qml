@@ -401,7 +401,7 @@ Item {
       root.dismiss()
       return
     }
-    writeProc.command = ["python3", root.script, "write", "--base64", Qt.btoa(root.proposedBlock),
+    writeProc.command = ["python3", root.script, "write", "--text", root.proposedBlock,
                          "--confirm-within", String(root.confirmSeconds)]
     writeProc.running = true
   }

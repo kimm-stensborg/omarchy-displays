@@ -333,7 +333,7 @@ Panel {
 
   function startWrite() {
     root.writeQueued = false
-    writeProc.command = ["python3", root.script, "write", "--base64", Qt.btoa(root.pendingBlock)]
+    writeProc.command = ["python3", root.script, "write", "--text", root.pendingBlock]
     writeProc.running = true
   }
 

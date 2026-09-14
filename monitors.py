@@ -18,9 +18,9 @@ Layout.js builds the block; this only checks it and puts it in place. Every
 subcommand speaks JSON on stdout:
 
   read                                the block, and the state around it
-  check   --base64 <block>            validate a block, write nothing
-  adopt   --base64 <block>            take over a file with no block (once)
-  write   --base64 <block> [--confirm-within SECONDS]
+  check   --text|--base64 <block>     validate a block, write nothing
+  adopt   --text|--base64 <block>     take over a file with no block (once)
+  write   --text|--base64 <block> [--confirm-within SECONDS]
   confirm                             keep what the last confirmable write did
   revert                              undo it now
   recover                             undo it if its deadline passed unconfirmed
@@ -426,8 +426,15 @@ def reply(ok=True, **fields):
 
 
 def block_arg(argv):
+    # --text is what the QML uses: Process hands argv over without a shell, so
+    # the block needs no encoding. --base64 is for typing at a terminal.
+    if "--text" in argv:
+        index = argv.index("--text")
+        if index + 1 >= len(argv):
+            raise ValueError("--text <block> is missing its block")
+        return argv[index + 1]
     if "--base64" not in argv:
-        raise ValueError("--base64 <block> is required")
+        raise ValueError("--text <block> or --base64 <block> is required")
     index = argv.index("--base64")
     try:
         return base64.b64decode(argv[index + 1]).decode("utf-8")
