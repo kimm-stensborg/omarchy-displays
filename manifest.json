@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.kimm-stensborg.displays",
+  "name": "Displays",
+  "version": "1.0.0",
+  "author": "Kimm Stensborg",
+  "license": "MIT",
+  "description": "Arrange displays and set scale, resolution and rotation per display, persisted so they stick",
+  "kinds": [
+    "bar-widget",
+    "overlay",
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "barWidget": "Displays.qml",
+    "overlay": "Arrange.qml",
+    "service": "Reconcile.qml"
+  },
+  "barWidget": {
+    "displayName": "Displays",
+    "description": "Brightness, text size, per-display scale, and which displays are on, with a way into Arrange displays",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
