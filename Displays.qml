@@ -45,6 +45,9 @@ Panel {
   // What Hyprland shows, and what the file declares.
   property var live: []
   property var rules: []
+  // The layouts the block remembers for other sets of monitors; carried
+  // through every write so none is lost.
+  property var desks: []
   property bool adopted: true
   property string statusMessage: ""
 
@@ -354,7 +357,9 @@ Panel {
       root.showStatus("Can't: " + result.check.reason)
       return
     }
-    root.rules = Layout.parseBlock(result.block).rules
+    var parsed = Layout.parseBlock(result.block)
+    root.rules = parsed.rules
+    root.desks = parsed.desks
     root.pendingBlock = result.block
     if (writeProc.running) {
       root.writeQueued = true
@@ -372,7 +377,7 @@ Panel {
   function setScale(value) {
     var d = root.focusedDisplay
     if (!d) return
-    root.commit(Layout.withChange(root.live, root.rules, d.name, { scale: Number(value) }))
+    root.commit(Layout.withChange(root.live, root.rules, d.name, { scale: Number(value) }, root.desks))
   }
 
   function openSetup() {
@@ -483,7 +488,9 @@ Panel {
         // Don't overwrite the optimistic copy while our own write is out.
         if (writeProc.running || root.writeQueued) return
         root.adopted = payload.adopted === true
-        root.rules = Layout.parseBlock(String(payload.block || "")).rules
+        var parsed = Layout.parseBlock(String(payload.block || ""))
+        root.rules = parsed.rules
+        root.desks = parsed.desks
       }
     }
   }

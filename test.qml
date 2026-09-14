@@ -52,7 +52,10 @@ QtObject {
     var block = Layout.adoptionBlock(live)
     var parsed = Layout.parseBlock(block)
     if (parsed.rules.length !== 3) throw new Error("block")
-    if (Layout.renderRules(parsed.rules, parsed.gdkScale) !== block) throw new Error("round trip")
+    if (Layout.renderRules(parsed.rules, parsed.gdkScale, parsed.desks) !== block) throw new Error("round trip")
+    if (parsed.desks.length !== 1) throw new Error("desk remembered")
+    if (Layout.deskUpdate(live, parsed.rules, parsed.desks, block) !== null) throw new Error("desk stable")
+    if (!Layout.parseDeskLine(Layout.deskLine(parsed.desks[0]))) throw new Error("desk line")
     Layout.extractBlock("x\n" + block + "\ny")
 
     var change = Layout.withChange(live, parsed.rules, "DP-5", { scale: 1.25 })

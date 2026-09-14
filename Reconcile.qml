@@ -44,6 +44,8 @@ Item {
 
   // What the file declares, as of the last read, and what Hyprland shows.
   property var rules: []
+  property var desks: []
+  property string block: ""
   property bool adopted: false
   property bool pending: false
   property real fileAge: 0
@@ -160,7 +162,10 @@ Item {
         var payload = root.parse(text)
         if (payload && payload.ok) {
           root.adopted = payload.adopted === true
-          root.rules = Layout.parseBlock(payload.block).rules
+          var parsed = Layout.parseBlock(payload.block)
+          root.rules = parsed.rules
+          root.desks = parsed.desks
+          root.block = String(payload.block || "")
           root.pending = payload.pending !== null && payload.pending !== undefined
           root.fileAge = payload.age === null || payload.age === undefined ? 1e9 : Number(payload.age)
         }
@@ -240,7 +245,8 @@ Item {
   function sample() {
     if (!root.ready || writeProc.running || reloadProc.running) return
     root.readLive(function() {
-      if (!Layout.divergence(root.live, root.rules).length && !Layout.drift(root.live, root.rules).length) {
+      if (!Layout.divergence(root.live, root.rules).length && !Layout.drift(root.live, root.rules).length
+          && !Layout.deskUpdate(root.live, root.rules, root.desks, root.block)) {
         root.settled()
         return
       }
@@ -258,6 +264,32 @@ Item {
       root.candidate = ""
       return
     }
+    // A different set of monitors comes first: its own remembered layout is
+    // what should be showing, and any scale or position that disagrees with
+    // the current block is just the old desk's, not something to record.
+    var deskBlock = Layout.deskUpdate(root.live, root.rules, root.desks, root.block)
+    if (deskBlock) {
+      var deskKey = "desk:" + Layout.deskKey(Layout.layoutFrom(root.live, root.rules).layout).join("|")
+      if (deskKey === root.lastActed) {
+        if (root.warned !== deskKey) {
+          root.warned = deskKey
+          console.warn(root.pluginId, "the remembered layout did not take; leaving it:", deskKey)
+        }
+        return
+      }
+      if (deskKey !== root.candidate) {
+        root.candidate = deskKey
+        secondLook.restart()
+        return
+      }
+      root.candidate = ""
+      root.lastActed = deskKey
+      console.info(root.pluginId, "layout for this set of monitors:", deskKey)
+      writeProc.command = root.py(["write", "--text", deskBlock])
+      writeProc.running = true
+      return
+    }
+
     var diverged = Layout.divergence(root.live, root.rules)
     // A scale change is written down, and its reload fixes positions too, so
     // drift only counts when the scales all agree.
@@ -295,7 +327,7 @@ Item {
       return
     }
 
-    var result = Layout.reconciled(root.live, root.rules)
+    var result = Layout.reconciled(root.live, root.rules, root.desks)
     if (!result) return
     var check = Layout.validate(result.layout)
     if (!check.ok) {

@@ -57,6 +57,8 @@ Item {
   property var live: []
   property var rules: []
   property var passthrough: []
+  // Layouts remembered for other sets of monitors, carried through Apply.
+  property var desks: []
   property string currentBlock: ""
   property bool adopted: true
   property bool liveLoaded: false
@@ -77,7 +79,7 @@ Item {
 
   readonly property var selectedMonitor: Layout.find(root.working, root.selected)
   readonly property var check: Layout.validate(root.working)
-  readonly property string proposedBlock: Layout.renderBlock(Layout.normalize(root.working), root.passthrough)
+  readonly property string proposedBlock: Layout.renderBlock(Layout.normalize(root.working), root.passthrough, root.desks)
   readonly property bool dirty: root.blockLoaded && root.proposedBlock !== root.currentBlock
   readonly property bool edited: JSON.stringify(Layout.renderBlock(root.initial, root.passthrough))
                                  !== JSON.stringify(Layout.renderBlock(root.working, root.passthrough))
@@ -286,7 +288,9 @@ Item {
         }
         root.adopted = payload.adopted === true
         root.currentBlock = String(payload.block || "")
-        root.rules = Layout.parseBlock(root.currentBlock).rules
+        var parsed = Layout.parseBlock(root.currentBlock)
+        root.rules = parsed.rules
+        root.desks = parsed.desks
         root.blockLoaded = true
         if (payload.pending && !root.confirming)
           root.startCountdown(Date.now() + Number(payload.pending.remaining) * 1000)

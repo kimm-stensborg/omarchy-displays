@@ -876,7 +876,7 @@ function sortRules(rules) {
 //   - GDK_SCALE goes through tostring(): the literal-string form is what that
 //     same script's GDK sed looks for;
 //   - `--` only ever starts a comment, one per line, never inside a string.
-function renderRules(rules, gdk) {
+function renderRules(rules, gdk, desks) {
   var lines = [
     BEGIN_MARKER,
     "-- Written by the Displays plugin. Change it from the Displays bar popup or",
@@ -892,6 +892,11 @@ function renderRules(rules, gdk) {
   }
   lines.push("-- Anything not named above is placed automatically")
   lines.push('hl.monitor({ output = "", mode = "preferred", position = "auto", scale = fallback_scale })')
+  var remembered = sortDesks(desks || [])
+  if (remembered.length) {
+    lines.push("-- Remembered layouts, one per set of monitors; plugging a set back in restores its own.")
+    for (var j = 0; j < remembered.length; j++) lines.push(deskLine(remembered[j]))
+  }
   lines.push(END_MARKER)
   return lines.join("\n")
 }
@@ -899,14 +904,19 @@ function renderRules(rules, gdk) {
 // A layout as a block. `passthrough` is the declared rules for displays that
 // are not connected right now: the office monitor keeps its place in the file
 // while the laptop is at home.
-function renderBlock(layout, passthrough) {
+//
+// `desks` is what the block remembers for other sets of monitors. Whatever is
+// written is also remembered for the set plugged in right now, so every save
+// keeps that set's memory current.
+function renderBlock(layout, passthrough, desks) {
   var rules = []
   for (var i = 0; i < (layout || []).length; i++) {
     if (layout[i].declarable === false) continue
     rules.push(ruleFor(layout[i]))
   }
   for (var j = 0; j < (passthrough || []).length; j++) rules.push(passthrough[j])
-  return renderRules(rules, gdkScale(layout))
+  var gdk = gdkScale(layout)
+  return renderRules(rules, gdk, rememberDesk(desks, layout, gdk))
 }
 
 function extractBlock(text) {
@@ -944,17 +954,146 @@ function parseRule(line) {
 // The block read back: this plugin's own rules, minus the catch-all.
 function parseBlock(text) {
   var block = extractBlock(text)
-  if (!block) return { found: false, gdkScale: 1, rules: [] }
+  if (!block) return { found: false, gdkScale: 1, rules: [], desks: [] }
   var lines = block.split("\n")
   var gdk = 1
   var rules = []
+  var desks = []
   for (var i = 0; i < lines.length; i++) {
     var g = /^local gdk_scale = ([0-9]+)$/.exec(lines[i])
     if (g) { gdk = Number(g[1]); continue }
+    var desk = parseDeskLine(lines[i])
+    if (desk) { desks.push(desk); continue }
     var rule = parseRule(lines[i])
     if (rule && rule.output !== "") rules.push(rule)
   }
-  return { found: true, gdkScale: gdk, rules: rules }
+  return { found: true, gdkScale: gdk, rules: rules, desks: desks }
+}
+
+// ------------------------------------------------------------------- desks
+//
+// Each set of monitors remembers its own layout -- the desk at home, the
+// laptop on its own, the office -- without anyone having to name or save one.
+// They live in the managed block as comment lines, one per set:
+//
+//   -- desk {"monitors":[...],"gdk":1,"rules":[...]}
+//
+// Comments, because nothing else that reads monitors.lua may see them:
+// Hyprland skips them, and clamshell strips `--.*$` before it looks for
+// rules. The selectors in them are the same safe strings the rules use, so a
+// `--` can never appear inside one and end the comment early for clamshell.
+
+var DESK_PREFIX = "-- desk "
+
+// The set of monitors plugged in, by the selectors their rules use. A laptop
+// with its lid shut is still plugged in, so closing it is not a new desk.
+function deskKey(layout) {
+  var out = []
+  for (var i = 0; i < (layout || []).length; i++) {
+    if (layout[i].declarable === false) continue
+    out.push(String(layout[i].selector))
+  }
+  return out.sort()
+}
+
+function sameKey(a, b) {
+  return a.join("\n") === b.join("\n")
+}
+
+function findDesk(desks, key) {
+  for (var i = 0; i < (desks || []).length; i++) {
+    if (sameKey(desks[i].monitors, key)) return desks[i]
+  }
+  return null
+}
+
+function sortDesks(desks) {
+  var out = desks.slice()
+  out.sort(function(a, b) {
+    var ka = a.monitors.join("\n")
+    var kb = b.monitors.join("\n")
+    return ka < kb ? -1 : ka > kb ? 1 : 0
+  })
+  return out
+}
+
+function deskLine(desk) {
+  return DESK_PREFIX + JSON.stringify({
+    monitors: desk.monitors,
+    gdk: desk.gdk,
+    rules: sortRules(desk.rules).map(function(r) {
+      return r.disabled
+        ? { output: r.output, disabled: true }
+        : { output: r.output, mode: r.mode, position: r.position, scale: r.scale, transform: r.transform || 0 }
+    })
+  })
+}
+
+// A desk read back, or null. Its rules are written into the live block when
+// that set is plugged in, so a line edited into anything a rule could not be
+// is dropped rather than trusted.
+function parseDeskLine(line) {
+  if (String(line).indexOf(DESK_PREFIX) !== 0) return null
+  var data
+  try { data = JSON.parse(String(line).substring(DESK_PREFIX.length)) } catch (e) { return null }
+  if (!data || !Array.isArray(data.monitors) || !Array.isArray(data.rules)) return null
+  var rules = []
+  for (var i = 0; i < data.rules.length; i++) {
+    var r = data.rules[i] || {}
+    var output = String(r.output || "")
+    if (!safeString(output) || !(output.indexOf("desc:") === 0 || CONNECTOR_PATTERN.test(output))) return null
+    if (r.disabled === true) {
+      rules.push({ output: output, disabled: true })
+      continue
+    }
+    var mode = String(r.mode || "")
+    var position = String(r.position || "")
+    var scale = String(r.scale || "")
+    if (!/^([0-9]+x[0-9]+(@[0-9]+([.][0-9]+)?)?|preferred)$/.test(mode)) return null
+    if (!POSITION_PATTERN.test(position)) return null
+    if (!/^[0-9]+([.][0-9]+)?$/.test(scale)) return null
+    rules.push({ output: output, disabled: false, mode: mode, position: position, scale: scale,
+                 transform: (Number(r.transform) || 0) & 7 })
+  }
+  var monitors = data.monitors.map(String)
+  for (var j = 0; j < monitors.length; j++) if (!safeString(monitors[j])) return null
+  var gdk = Math.max(1, Math.round(Number(data.gdk) || 1))
+  return { monitors: monitors.sort(), gdk: gdk, rules: rules }
+}
+
+// `desks` with the set plugged in now remembered as `layout`.
+function rememberDesk(desks, layout, gdk) {
+  var key = deskKey(layout)
+  var out = (desks || []).filter(function(d) { return !sameKey(d.monitors, key) })
+  if (!key.length) return out
+  var rules = []
+  for (var i = 0; i < layout.length; i++) {
+    if (layout[i].declarable === false) continue
+    rules.push(ruleFor(layout[i]))
+  }
+  out.push({ monitors: key, gdk: gdk, rules: sortRules(rules) })
+  return out
+}
+
+// What the block should be for the monitors plugged in now, or null when it
+// already is. A set seen before gets its own layout back; a set never seen
+// before is remembered as it stands, nothing moved. Either way the reload the
+// write causes is what applies it.
+function deskUpdate(live, rules, desks, block) {
+  if (!live || !live.length) return null
+  var base = layoutFrom(live, rules)
+  var key = deskKey(base.layout)
+  if (!key.length) return null
+  var desk = findDesk(desks, key)
+  var next
+  if (desk) {
+    var outputs = desk.rules.map(function(r) { return r.output })
+    var keep = (rules || []).filter(function(r) { return outputs.indexOf(r.output) < 0 })
+    next = renderRules(desk.rules.concat(keep), desk.gdk, desks)
+  } else {
+    next = renderBlock(base.layout, base.passthrough, desks)
+  }
+  return next === block ? null : next
 }
 
 function matchRule(monitor, rules) {
@@ -1015,7 +1154,7 @@ function layoutFrom(live, rules) {
 
 // One change to one display, with the arrangement re-derived around it.
 // patch is any of { scale, width, height, refresh, transform, enabled }.
-function withChange(live, rules, name, patch) {
+function withChange(live, rules, name, patch, desks) {
   var base = layoutFrom(live, rules)
   var after = cloneLayout(base.layout)
   var e = find(after, name)
@@ -1026,7 +1165,7 @@ function withChange(live, rules, name, patch) {
   return {
     layout: arranged,
     passthrough: base.passthrough,
-    block: renderBlock(arranged, base.passthrough),
+    block: renderBlock(arranged, base.passthrough, desks),
     check: validate(arranged)
   }
 }
@@ -1098,7 +1237,7 @@ function drift(live, rules) {
 // The block with those scales written down, and the arrangement re-derived
 // from the declared one -- not from the live positions, which `auto` has
 // already scrambled. null when there is nothing to record.
-function reconciled(live, rules) {
+function reconciled(live, rules, desks) {
   var changes = divergence(live, rules)
   if (!changes.length) return null
   var base = layoutFrom(live, rules)
@@ -1112,7 +1251,7 @@ function reconciled(live, rules) {
     changes: changes,
     layout: arranged,
     passthrough: base.passthrough,
-    block: renderBlock(arranged, base.passthrough)
+    block: renderBlock(arranged, base.passthrough, desks)
   }
 }
 

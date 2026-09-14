@@ -324,7 +324,7 @@ const declared = L.parseBlock(adoption).rules
 check("parse reads every rule back", declared.map(r => r.output),
       ["desc:Lenovo Group Limited T27QD-40 VNACDZ5V", "desc:Lenovo Group Limited T27QD-40 VNACDZ1G", "eDP-1"])
 check("rendering what was parsed gives the same bytes",
-      L.renderRules(declared, L.parseBlock(adoption).gdkScale), adoption)
+      L.renderRules(declared, L.parseBlock(adoption).gdkScale, L.parseBlock(adoption).desks), adoption)
 {
   const again = L.layoutFrom(live, declared)
   check("and so does rebuilding it from the live monitors", L.renderBlock(again.layout, again.passthrough), adoption)
@@ -375,6 +375,51 @@ check("nothing to reconcile", L.reconciled(live, declared), null)
 check("float noise is not a divergence", L.divergence(withLive({ "DP-5": { scale: 1.0000001 } }), declared), [])
 check("a switched-off display is not a divergence",
       L.divergence(withLive({ "eDP-1": { disabled: true, scale: 2 } }), declared), [])
+
+// ------------------------------------------------------------------ desks
+
+{
+  const EDP = "eDP-1"
+  const deskOf = (parsed, size) => parsed.desks.find(d => d.monitors.length === size)
+  const scaleIn = (rules, output) => rules.find(r => r.output === output).scale
+
+  const home = L.parseBlock(adoption)
+  check("the desk plugged in now is remembered", home.desks.map(d => d.monitors),
+        [["desc:Lenovo Group Limited T27QD-40 VNACDZ1G", "desc:Lenovo Group Limited T27QD-40 VNACDZ5V", EDP]])
+  check("nothing to do on the same desk", L.deskUpdate(live, home.rules, home.desks, adoption), null)
+  check("the lid shut is the same desk",
+        L.deskUpdate(withLive({ "eDP-1": { disabled: true } }), home.rules, home.desks, adoption), null)
+
+  // Unplug the Lenovos. The laptop on its own has never been seen: it is
+  // remembered as it stands, and nothing moves.
+  const laptop = L.parseMonitors(DESK.filter(m => m.name === EDP))
+  const seen = L.deskUpdate(laptop, home.rules, home.desks, adoption)
+  const alone = L.parseBlock(seen)
+  check("an unseen desk is remembered", alone.desks.length, 2)
+  check("without touching the live rules", alone.rules, home.rules)
+
+  // On the laptop alone, 1.25.
+  const scaled = L.withChange(laptop, alone.rules, EDP, { scale: 1.25 }, alone.desks)
+  const away = L.parseBlock(scaled.block)
+  check("the laptop desk remembers 1.25", scaleIn(deskOf(away, 1).rules, EDP), "1.25")
+  check("the home desk still remembers 1", scaleIn(deskOf(away, 3).rules, EDP), "1")
+
+  // Plug the Lenovos back in: the home layout comes back, laptop at 1.
+  const replugged = withLive({ "eDP-1": { scale: 1.25, x: 0 } })
+  const restored = L.deskUpdate(replugged, away.rules, away.desks, scaled.block)
+  const back = L.parseBlock(restored)
+  check("home comes back", back.rules, home.rules)
+  check("and then stays put", L.deskUpdate(live, back.rules, back.desks, restored), null)
+
+  // Unplug again: the laptop gets its 1.25 back.
+  const again = L.parseBlock(L.deskUpdate(laptop, back.rules, back.desks, restored))
+  check("the laptop comes back at 1.25", scaleIn(again.rules, EDP), "1.25")
+
+  check("a remembered line round-trips", L.parseDeskLine(L.deskLine(home.desks[0])), home.desks[0])
+  check("an edited line that is not safe is dropped",
+        L.parseDeskLine(L.deskLine(home.desks[0]).replace('"0x0"', '"0x0\\" })"')), null)
+  check("so is one that is not JSON", L.parseDeskLine("-- desk {nope"), null)
+}
 
 // ------------------------------------------- the scripts that read the file
 
