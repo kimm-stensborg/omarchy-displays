@@ -107,8 +107,8 @@ keys:
 - **Brightness**: the focused display's backlight, through
   `omarchy-brightness-display`. The scroll wheel on the bar icon changes it too.
 - **Text size**: the shell and GTK text size, through `omarchy-display-text-size`.
-- **Scale**: every valid scale for the focused display's current mode (see
-  below), not six presets.
+- **Scale**: 1, 1.25, 1.6, 2, 2.5, 3.2 and 4, adjusted for the focused
+  display's mode (see below).
   - It always names the display it targets.
   - It **only ever changes the focused display**. To scale another display,
     focus it or use Arrange displays.
@@ -141,7 +141,7 @@ anything is written.
 - A box let go somewhere it can't stay moves to the nearest free edge.
 - A layout with a **gap or an overlap can't be applied**. Hyprland would
   accept it, but a gap is a wall the pointer can't cross.
-- The selected display has **scale** (valid values only), **resolution**,
+- The selected display has **scale** (the same presets), **resolution**,
   **refresh rate**, **rotation** (all eight transforms) and **on/off**.
   Changing any of them re-derives the arrangement around it.
 
@@ -171,14 +171,20 @@ shell start, so a crash in the middle still ends in the old layout.
 
 Hyprland stores scale in 1/120 steps. A scale `s` is valid for a `w×h` mode
 exactly when `k = round(s × 120)` divides `g = gcd(120w, 120h)`. In other
-words, the logical size comes out whole on both axes. Displays offers every
-valid scale from 1× to 4× for the display's actual mode. A requested value is
+words, the logical size comes out whole on both axes. Any requested scale is
 clamped to `g/120` and rounded **up** to the next valid one, never down.
 
-| Mode | Valid scales |
-|------|--------------|
-| 2560×1440 | 1, 1.0667, 1.25, 1.3333, 1.6, 1.6667, 2, 2.1333, 2.5, 2.6667, 3.2, 3.3333, 4 (1.5 → 1.6, 3 → 3.2) |
-| 1920×1200 | 1, 1.0667, 1.2, 1.25, 1.3333, 1.5, 1.6, 1.6667, 1.875, 2, 2.4, 2.5, 2.6667, 3, 3.2, 3.3333, 3.75, 4 |
+Displays offers seven presets: 1, 1.25, 1.6, 2, 2.5, 3.2 and 4.
+- On a mode where a preset isn't valid, it's offered as the scale it rounds
+  up to.
+- A current scale that isn't one of them (set from a terminal, say) is shown
+  too, so the active one is always visible.
+
+| Mode | Offered |
+|------|---------|
+| 2560×1440 | 1, 1.25, 1.6, 2, 2.5, 3.2, 4 |
+| 1920×1200 | 1, 1.25, 1.6, 2, 2.5, 3.2, 4 |
+| 1920×1080 | 1, 1.25, 1.6, 2, 2.5, 3.3333, 4 (3.2 isn't valid, so it rounds up) |
 
 `GDK_SCALE` is a single whole number for the whole session, and GTK ignores
 fractions. Displays sets it to `int(s + 0.5)` of the lowest-scaled display

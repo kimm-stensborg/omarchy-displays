@@ -130,6 +130,17 @@ check("g for 1920x1200", L.modeDivisor(1920, 1200), 28800)
   check("and stays put", L.cleanScale(3, 1920, 1200), 3)
 }
 
+const PRESETS = ["1", "1.25", "1.6", "2", "2.5", "3.2", "4"]
+check("offered at 2560x1440", L.scaleOptions(2560, 1440, 1).map(L.scaleLabel), PRESETS)
+check("offered at 1920x1200", L.scaleOptions(1920, 1200, 1).map(L.scaleLabel), PRESETS)
+check("a preset the mode can't do is offered as what it rounds up to",
+      L.scaleOptions(1920, 1080, 1).map(L.scaleLabel), ["1", "1.25", "1.6", "2", "2.5", "3.3333", "4"])
+check("an off-list current scale is still shown",
+      L.scaleOptions(2560, 1440, 1.0666667).map(L.scaleLabel),
+      ["1", "1.0667", "1.25", "1.6", "2", "2.5", "3.2", "4"])
+check("an on-list current scale adds nothing", L.scaleOptions(2560, 1440, 1.6).length, 7)
+check("no mode, no options", L.scaleOptions(0, 0, 1), [])
+
 check("clamped to g/120 on a tiny mode", L.cleanScale(4, 2, 2), 2)
 check("a mode below 1x still has a ladder", L.scaleLadder(1, 1), [1])
 check("no mode, no ladder", L.scaleLadder(0, 1080), [])

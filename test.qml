@@ -32,6 +32,7 @@ QtObject {
 
     var ladder = Layout.scaleLadder(2560, 1440)
     if (ladder.length !== 13) throw new Error("ladder")
+    if (Layout.scaleOptions(2560, 1440, 1).length !== 7) throw new Error("presets")
     if (Layout.scaleLabel(Layout.cleanScale(1.5, 2560, 1440)) !== "1.6") throw new Error("clean")
     if (!Layout.isValidScale(1.5, 1920, 1200)) throw new Error("valid")
     Layout.formatScale(ladder[1])

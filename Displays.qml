@@ -19,8 +19,8 @@ import "Layout.js" as Layout
 //     the reload its own write triggers undoes the change a few seconds later.
 //   - The arrangement is re-derived around the new size instead of the
 //     rescaled display being parked at the end of the row by `auto`.
-//   - Every valid scale for the display's actual mode is offered, not six
-//     presets that collapse into each other.
+//   - The scale presets are cleaned for the display's actual mode, so no
+//     button offers a scale Hyprland would quietly change.
 //   - Switching a display off survives a restart.
 Panel {
   id: root
@@ -108,7 +108,7 @@ Panel {
   // Mouse hover on a target updates root state, so keyboard cursor and
   // pointer share one highlight.
   readonly property var scaleValues: root.focusedDisplay
-    ? Layout.scaleLadder(root.focusedDisplay.width, root.focusedDisplay.height) : []
+    ? Layout.scaleOptions(root.focusedDisplay.width, root.focusedDisplay.height, root.focusedDisplay.scale) : []
   property string focusSection: "scale"
   property int selectedIndex: 0
   property bool cursorActive: false
@@ -932,7 +932,7 @@ Panel {
             Grid {
               id: scaleRow
               width: parent.width
-              columns: Math.max(1, Math.min(root.scaleValues.length, 5))
+              columns: Math.max(1, Math.min(root.scaleValues.length, 7))
               spacing: Style.spacing.xs
 
               readonly property real cellWidth: (width - spacing * (columns - 1)) / columns

@@ -489,7 +489,7 @@ Item {
   property bool cursorActive: false
 
   readonly property var scaleValues: root.selectedMonitor
-    ? Layout.scaleLadder(root.selectedMonitor.width, root.selectedMonitor.height) : []
+    ? Layout.scaleOptions(root.selectedMonitor.width, root.selectedMonitor.height, root.selectedMonitor.scale) : []
   readonly property var resolutionOptions: {
     var m = root.selectedMonitor
     if (!m) return []

@@ -108,6 +108,29 @@ function scaleLadder(width, height) {
   return out
 }
 
+// The scales the popup and Arrange offer. All of them are valid at 2560x1440
+// and 1920x1200; on a mode where one is not, it is offered as the scale it
+// rounds up to, so no button promises something Hyprland would change.
+var SCALE_PRESETS = [1, 1.25, 1.6, 2, 2.5, 3.2, 4]
+
+// The presets cleaned for this mode and deduplicated, plus the current scale
+// when it is none of them -- set from a terminal, say -- so the row always
+// shows which one is active.
+function scaleOptions(width, height, current) {
+  var seen = {}
+  var out = []
+  function add(scale) {
+    var k = cleanUnits(scale, width, height)
+    if (!k || seen[k]) return
+    seen[k] = true
+    out.push(k / UNITS)
+  }
+  for (var i = 0; i < SCALE_PRESETS.length; i++) add(SCALE_PRESETS[i])
+  if (isValidScale(current, width, height)) add(current)
+  out.sort(function(a, b) { return a - b })
+  return out
+}
+
 function trimNumber(text) {
   text = String(text)
   if (text.indexOf(".") < 0) return text
