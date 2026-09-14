@@ -137,10 +137,15 @@ by scale. That is the size Hyprland lays it out at, so changing a scale
 visibly shrinks the box, and any gap it would open is visible before
 anything is written.
 
-- Boxes **snap** to each other's edges while you drag.
-- A box let go somewhere it can't stay moves to the nearest free edge.
-- A layout with a **gap or an overlap can't be applied**. Hyprland would
-  accept it, but a gap is a wall the pointer can't cross.
+- While you drag, a **ghost** shows where the display will land, and the
+  others slide aside to make room.
+  - Over another display, it goes beside that one, on whichever side of it
+    you're over, and whatever is further along that side moves over.
+  - Over open space, it lines up with nearby edges and attaches to the
+    nearest free edge.
+- A **gap or an overlap is impossible**: whatever a move leaves behind closes
+  up. Hyprland would accept either, but a gap is a wall the pointer can't
+  cross. Apply still checks, as a backstop.
 - The selected display has **scale** (the same presets), **resolution**,
   **refresh rate**, **rotation** (all eight transforms) and **on/off**.
   Changing any of them re-derives the arrangement around it.
@@ -161,7 +166,7 @@ shell start, so a crash in the middle still ends in the old layout.
 | Key | Action |
 |-----|--------|
 | `h` `l` / `Tab` | pick a display |
-| `Shift` + `H` `J` `K` `L` | move it to the next free edge in that direction |
+| `Shift` + `H` `J` `K` `L` | move it past its neighbour in that direction |
 | `j` `k` | walk scale, resolution, refresh, rotation, on/off, buttons |
 | `h` `l` on a setting | cycle through its values |
 | `Enter` | apply the scale under the cursor, toggle on/off, press a button |

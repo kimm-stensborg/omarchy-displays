@@ -11,11 +11,11 @@ import "Layout.js" as Layout
 //
 // Every display is drawn at its logical size -- physical size, rotated,
 // divided by scale -- which is the size Hyprland lays it out at. So changing a
-// scale visibly shrinks or grows the box, and the gap it would leave is on
-// screen before anything is written. Boxes snap to each other's edges while
-// dragged, and a box let go somewhere it cannot stay goes to the nearest free
-// edge. A layout with a gap or an overlap cannot be applied at all: Hyprland
-// would take it, and leave a wall the pointer cannot cross.
+// scale visibly shrinks or grows the box. While a box is dragged, a ghost
+// shows where it will land and the others slide aside to make room; whatever
+// the move leaves behind closes up. So a gap or an overlap -- which Hyprland
+// would accept, leaving a wall the pointer cannot cross -- is not a state the
+// canvas can get into.
 //
 // Nothing is written until Apply, and Apply is the one change in this plugin
 // that can leave the machine unusable, so it comes with a way back:
@@ -291,25 +291,13 @@ Item {
     root.edit(root.selected, { enabled: on })
   }
 
-  function moveTo(name, x, y) {
-    var after = Layout.cloneLayout(root.working)
-    var e = Layout.find(after, name)
-    if (!e) return
-    e.x = Math.round(x)
-    e.y = Math.round(y)
-    root.statusMessage = ""
-    root.setWorking(Layout.normalize(after))
-  }
-
-  function othersOf(name) {
-    return Layout.enabledRects(root.working).filter(function(r) { return r.name !== name })
-  }
-
   function nudge(dx, dy) {
     var m = root.selectedMonitor
     if (!m || !m.enabled) return
-    var spot = Layout.nudge(Layout.rectOf(m), root.othersOf(m.name), dx, dy)
-    if (spot) root.moveTo(m.name, spot.x, spot.y)
+    var moved = Layout.stepMove(root.working, m.name, dx, dy)
+    if (!moved) return
+    root.statusMessage = ""
+    root.setWorking(Layout.normalize(moved.layout))
   }
 
   function reset() {
@@ -322,33 +310,37 @@ Item {
   property string dragName: ""
   property real dragX: 0
   property real dragY: 0
+  // What the layout would be if the dragged box were let go now:
+  // { layout, landing }. The other boxes are drawn from it, so they slide
+  // aside as the drag goes, and the ghost is drawn at `landing`.
+  property var dragPreview: null
 
   function dragTo(name, x, y, threshold) {
-    var m = Layout.find(root.working, name)
-    if (!m) return
-    var rect = Layout.rectOf(m)
-    rect.x = Math.round(x)
-    rect.y = Math.round(y)
-    var spot = Layout.snap(rect, root.othersOf(name), threshold)
     root.dragName = name
-    root.dragX = spot.x
-    root.dragY = spot.y
+    root.dragX = x
+    root.dragY = y
+    var preview = Layout.dropPreview(root.working, name, { x: x, y: y }, threshold)
+    // Nowhere valid reachable from here: keep showing the last spot.
+    if (preview) root.dragPreview = preview
   }
 
   function drop(name) {
-    var m = Layout.find(root.working, name)
-    if (!m || root.dragName !== name) return
-    var rect = Layout.rectOf(m)
-    rect.x = root.dragX
-    rect.y = root.dragY
-    var spot = Layout.attach(rect, root.othersOf(name))
+    if (root.dragName !== name) return
+    var preview = root.dragPreview
     root.dragName = ""
-    root.moveTo(name, spot.x, spot.y)
+    root.dragPreview = null
+    if (preview) {
+      root.statusMessage = ""
+      root.setWorking(Layout.normalize(preview.layout))
+    } else {
+      root.frameStage()
+    }
   }
 
   function cancelDrag() {
     if (!root.dragName) return
     root.dragName = ""
+    root.dragPreview = null
     root.frameStage()
   }
 
@@ -701,6 +693,31 @@ Item {
 
             onWidthChanged: root.frameStage()
 
+            // Where the dragged display will land if let go now.
+            Rectangle {
+              id: ghost
+              readonly property var landing: root.dragPreview ? root.dragPreview.landing : null
+              visible: root.dragName !== "" && ghost.landing !== null
+              x: stage.originX + (ghost.landing ? ghost.landing.x : 0) * stage.factor
+              y: stage.originY + (ghost.landing ? ghost.landing.y : 0) * stage.factor
+              width: Math.max(1, (ghost.landing ? ghost.landing.width : 0) * stage.factor)
+              height: Math.max(1, (ghost.landing ? ghost.landing.height : 0) * stage.factor)
+              z: 2
+              radius: Style.cornerRadius
+              color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.16)
+              border.width: 2
+              border.color: root.accent
+
+              Behavior on x {
+                enabled: ghost.visible
+                NumberAnimation { duration: 110; easing.type: Easing.OutCubic }
+              }
+              Behavior on y {
+                enabled: ghost.visible
+                NumberAnimation { duration: 110; easing.type: Easing.OutCubic }
+              }
+            }
+
             Repeater {
               model: root.stageNames
 
@@ -712,12 +729,31 @@ Item {
                 readonly property var rect: box.mon ? Layout.rectOf(box.mon) : ({ x: 0, y: 0, width: 0, height: 0 })
                 readonly property bool dragged: root.dragName === box.modelData
                 readonly property bool isSelected: root.selected === box.modelData
+                // While another box is dragged, where this one would be.
+                readonly property var shown: {
+                  var preview = root.dragPreview && !box.dragged
+                    ? Layout.find(root.dragPreview.layout, box.modelData) : null
+                  return preview ? Layout.rectOf(preview) : box.rect
+                }
+                // No sliding in from the corner when the canvas first draws.
+                property bool settled: false
+                Component.onCompleted: Qt.callLater(function() { box.settled = true })
 
-                x: stage.originX + (box.dragged ? root.dragX : box.rect.x) * stage.factor
-                y: stage.originY + (box.dragged ? root.dragY : box.rect.y) * stage.factor
+                x: stage.originX + (box.dragged ? root.dragX : box.shown.x) * stage.factor
+                y: stage.originY + (box.dragged ? root.dragY : box.shown.y) * stage.factor
                 width: Math.max(1, box.rect.width * stage.factor)
                 height: Math.max(1, box.rect.height * stage.factor)
-                z: box.dragged ? 2 : (box.isSelected ? 1 : 0)
+                z: box.dragged ? 3 : (box.isSelected ? 1 : 0)
+                opacity: box.dragged ? 0.8 : 1
+
+                Behavior on x {
+                  enabled: box.settled && !box.dragged
+                  NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                }
+                Behavior on y {
+                  enabled: box.settled && !box.dragged
+                  NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                }
                 radius: Style.cornerRadius
                 color: box.isSelected ? Style.selectedFillFor(root.foreground, root.accent) : Style.normalFill
                 border.width: box.isSelected ? 2 : 1

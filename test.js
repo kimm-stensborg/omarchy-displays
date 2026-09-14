@@ -210,9 +210,6 @@ check("a valid spot is left alone",
 check("a row prefers the end of the row",
       L.attach(R("C", 2560, 0, 1920, 1200), [R("A", 0, 0, 2560, 1440), R("B", 2560, 0, 1920, 1200)]),
       { x: 4480, y: 0 })
-check("nudge right keeps the row",
-      L.nudge(R("A", 0, 0, 2560, 1440), [R("B", 2560, 0, 2560, 1440)], 1, 0), { x: 5120, y: 0 })
-check("nudge down goes below", L.nudge(R("A", 0, 0, 2560, 1440), [R("B", 2560, 0, 2560, 1440)], 0, 1).y, 1440)
 
 // ---------------------------------------------------------------- reflow
 
@@ -272,6 +269,47 @@ const declared = L.parseBlock(adoption).rules
     { name: "B", enabled: true, x: 3000, y: 0, width: 1920, height: 1080, scale: 1, transform: 0 }
   ]
   check("an old gap is closed", positions(L.reflow(before, L.cloneLayout(before))), [["A", 0, 0], ["B", 2560, 0]])
+}
+
+// -------------------------------------------------------------- dragging
+
+{
+  const desk = L.layoutFrom(live, declared).layout
+  // Left to right. The layout keeps its array order on purpose -- the canvas
+  // makes a box per entry, and reordering them would re-create the boxes.
+  const order = (p) => positions(L.normalize(p.layout)).sort((a, b) => (a[1] - b[1]) || (a[2] - b[2]))
+  check("grabbing without moving changes nothing",
+        order(L.dropPreview(desk, "DP-5", { x: 2560, y: 0 }, 32)), positions(desk))
+  check("over the right half of a neighbour: goes past it",
+        order(L.dropPreview(desk, "DP-7", { x: 2700, y: 0 }, 32)),
+        [["DP-5", 0, 0], ["DP-7", 2560, 0], ["eDP-1", 5120, 0]])
+  check("over the left half: stays before it",
+        order(L.dropPreview(desk, "DP-7", { x: 2300, y: 0 }, 32)), positions(desk))
+  check("dropped past the end, the hole it left closes up",
+        order(L.dropPreview(desk, "DP-5", { x: 5220, y: 0 }, 32)),
+        [["DP-7", 0, 0], ["eDP-1", 2560, 0], ["DP-5", 4480, 0]])
+  const under = L.dropPreview(desk, "eDP-1", { x: 100, y: 1500 }, 0)
+  check("over open space: attached to the nearest edge",
+        [L.find(under.layout, "eDP-1").x, L.find(under.layout, "eDP-1").y], [100, 1440])
+  check("the ghost is where it lands", under.landing, { name: "eDP-1", x: 100, y: 1440, width: 1920, height: 1200 })
+  check("keyboard: right goes past the neighbour",
+        order(L.stepMove(desk, "DP-7", 1, 0)), [["DP-5", 0, 0], ["DP-7", 2560, 0], ["eDP-1", 5120, 0]])
+  check("keyboard: left goes past a wider neighbour",
+        order(L.stepMove(desk, "eDP-1", -1, 0)), [["DP-7", 0, 0], ["eDP-1", 2560, 0], ["DP-5", 4480, 0]])
+  check("keyboard: at the end of the row, nothing moves",
+        order(L.stepMove(desk, "eDP-1", 1, 0)), positions(desk))
+
+  // Wherever a display is let go, nothing is left with a gap or an overlap.
+  let seed = 7, bad = 0, none = 0
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+  for (let i = 0; i < 600; i++) {
+    const name = ["DP-7", "DP-5", "eDP-1"][i % 3]
+    const p = L.dropPreview(desk, name, { x: rand() * 14000 - 5000, y: rand() * 8000 - 4000 }, 32)
+    if (!p) none++
+    else if (!L.validate(p.layout).ok) bad++
+  }
+  check("600 random drops: never a gap or an overlap", bad, 0)
+  check("and always somewhere to land", none, 0)
 }
 
 // ----------------------------------------------------------------- block

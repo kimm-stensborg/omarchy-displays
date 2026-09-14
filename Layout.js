@@ -566,25 +566,101 @@ function attach(rect, others) {
   return best || { x: rect.x, y: rect.y }
 }
 
-// Keyboard move: the next spot flush against the others in the direction
-// pressed, preferring spots that keep the other coordinate where it is.
-function nudge(rect, others, dx, dy) {
-  var candidates = attachCandidates(rect, others)
-  var best = null
-  var bestKey = null
-  for (var i = 0; i < candidates.length; i++) {
-    var c = candidates[i]
-    var primary = dx !== 0 ? (c.x - rect.x) * dx : (c.y - rect.y) * dy
-    if (primary <= 0) continue
-    var cross = dx !== 0 ? Math.abs(c.y - rect.y) : Math.abs(c.x - rect.x)
-    var key = [cross > 0 ? 1 : 0, primary, cross]
-    if (!bestKey || key[0] < bestKey[0] || (key[0] === bestKey[0] && (key[1] < bestKey[1]
-        || (key[1] === bestKey[1] && key[2] < bestKey[2])))) {
-      best = c
-      bestKey = key
-    }
+// Which side of `target` the point (cx, cy) is on: along whichever axis it is
+// further from the centre, relative to the target's size.
+function sideOf(target, cx, cy) {
+  var fx = (cx - (target.x + target.width / 2)) / target.width
+  var fy = (cy - (target.y + target.height / 2)) / target.height
+  if (Math.abs(fx) >= Math.abs(fy)) return fx >= 0 ? "right" : "left"
+  return fy >= 0 ? "below" : "above"
+}
+
+// The layout with `name` put beside `target`, and everything further along on
+// that side moved over by its size to make room.
+function insertBeside(layout, name, size, target, side) {
+  var out = cloneLayout(layout)
+  for (var i = 0; i < out.length; i++) {
+    var n = out[i]
+    if (!n.enabled || n.name === name) continue
+    if (side === "right" && n.x >= target.x + target.width) n.x += size.width
+    else if (side === "left" && n.x >= target.x) n.x += size.width
+    else if (side === "below" && n.y >= target.y + target.height) n.y += size.height
+    else if (side === "above" && n.y >= target.y) n.y += size.height
   }
-  return best
+  var e = find(out, name)
+  e.x = side === "right" ? target.x + target.width : target.x
+  e.y = side === "below" ? target.y + target.height : target.y
+  return out
+}
+
+// A hole the moved display left behind is closed up. The frame is kept --
+// nothing is normalised -- so a canvas can draw the result mid-drag without
+// the picture jumping.
+function settleDrop(layout, name) {
+  var out = layout
+  if (!validate(out).ok) out = reflow(out, out, true)
+  if (!validate(out).ok) return null
+  return { layout: out, landing: rectOf(find(out, name)) }
+}
+
+// Where a dragged display lands if let go with its top-left at rect.x/y, and
+// where everything else goes to make room: { layout, landing }, or null if
+// nothing valid can be reached from there.
+//
+// Over another display, it goes beside that one, on whichever side of it the
+// pointer is, pushing what is further along that side over. Over open space,
+// it snaps into line and attaches to the nearest free edge. Either way the
+// result has no gap and no overlap, so a drop never needs refusing.
+function dropPreview(layout, name, rect, threshold) {
+  var m = find(layout, name)
+  if (!m || !m.enabled) return null
+  var size = logicalSize(m)
+  var others = enabledRects(layout).filter(function(r) { return r.name !== name })
+  var moving = { name: name, x: Math.round(rect.x), y: Math.round(rect.y), width: size.width, height: size.height }
+  var cx = moving.x + size.width / 2
+  var cy = moving.y + size.height / 2
+
+  for (var i = 0; i < others.length; i++) {
+    var o = others[i]
+    if (cx >= o.x && cx < o.x + o.width && cy >= o.y && cy < o.y + o.height)
+      return settleDrop(insertBeside(layout, name, size, o, sideOf(o, cx, cy)), name)
+  }
+
+  var snapped = snap(moving, others, threshold || 0)
+  moving.x = snapped.x
+  moving.y = snapped.y
+  var spot = attach(moving, others)
+  var out = cloneLayout(layout)
+  var e = find(out, name)
+  e.x = spot.x
+  e.y = spot.y
+  return settleDrop(out, name)
+}
+
+// Keyboard move. Toward a neighbour that shares the edge, the display goes
+// past it; with nothing on that side, it is dragged one of its own lengths
+// that way.
+function stepMove(layout, name, dx, dy) {
+  var m = find(layout, name)
+  if (!m || !m.enabled) return null
+  var r = rectOf(m)
+  var side = dx > 0 ? "right" : dx < 0 ? "left" : dy > 0 ? "below" : "above"
+  var others = enabledRects(layout).filter(function(o) { return o.name !== name })
+  var neighbour = null
+  var bestCross = Infinity
+  for (var i = 0; i < others.length; i++) {
+    var o = others[i]
+    if (!touches(r, o)) continue
+    var beside = side === "right" ? o.x === r.x + r.width
+      : side === "left" ? o.x + o.width === r.x
+      : side === "below" ? o.y === r.y + r.height
+      : o.y + o.height === r.y
+    if (!beside) continue
+    var cross = side === "right" || side === "left" ? Math.abs(o.y - r.y) : Math.abs(o.x - r.x)
+    if (cross < bestCross) { bestCross = cross; neighbour = o }
+  }
+  if (neighbour) return settleDrop(insertBeside(layout, name, { width: r.width, height: r.height }, neighbour, side), name)
+  return dropPreview(layout, name, { x: r.x + dx * r.width, y: r.y + dy * r.height }, Math.round(Math.max(r.width, r.height) / 4))
 }
 
 // How a child sat against its parent: which side, and how it lined up along
@@ -642,7 +718,10 @@ function placeBy(rel, parent, size) {
 //
 // Three in a row with the middle one going from 1x to 1.25x: 0 / 2560 / 5120
 // becomes 0 / 2560 / 4608, instead of Hyprland's `auto` parking it at the end.
-function reflow(before, after) {
+//
+// keepFrame leaves the result where the top-left display was instead of moving
+// it to 0x0, for drawing mid-drag.
+function reflow(before, after, keepFrame) {
   var out = cloneLayout(after)
   var byName = {}
   for (var i = 0; i < out.length; i++) byName[out[i].name] = out[i]
@@ -724,7 +803,7 @@ function reflow(before, after) {
     out[w].x = r.x
     out[w].y = r.y
   }
-  return normalize(out)
+  return keepFrame ? out : normalize(out)
 }
 
 // ------------------------------------------------------------------ rules

@@ -62,7 +62,8 @@ QtObject {
     var rects = Layout.enabledRects(change.layout)
     Layout.snap(rects[0], rects.slice(1), 32)
     Layout.attach(rects[0], rects.slice(1))
-    Layout.nudge(rects[0], rects.slice(1), 1, 0)
+    if (!Layout.dropPreview(change.layout, "DP-7", { x: 2700, y: 0 }, 32)) throw new Error("drop")
+    if (!Layout.stepMove(change.layout, "DP-7", 1, 0)) throw new Error("step")
     Layout.normalize(change.layout)
 
     var drifted = Layout.parseMonitors(raw)
