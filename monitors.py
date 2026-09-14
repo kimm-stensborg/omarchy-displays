@@ -24,7 +24,7 @@ subcommand speaks JSON on stdout:
   confirm                             keep what the last confirmable write did
   revert                              undo it now
   recover                             undo it if its deadline passed unconfirmed
-  menu                                add "Arrange displays" to the Omarchy menu, once
+  menu                                add "Displays" to the Omarchy menu, once
   retire                              disable the old omarchy-monitor-scale-persist unit
 """
 
@@ -624,7 +624,7 @@ MENU_MARKER = "  // ── Displays (%s)" % PLUGIN_ID
 MENU_ENTRY = {
     "icon": "󰍺",
     "label": "Displays",
-    "description": "Arrange displays, and set scale, resolution and rotation per display",
+    "description": "Set up displays: arrangement, scale, resolution, refresh rate and rotation",
     "aliases": ["displays", "monitors", "arrange-displays"],
     # Hides the row once `omarchy plugin remove` has deleted the folder.
     "when": "[[ -d ~/.config/omarchy/plugins/%s ]]" % PLUGIN_ID,

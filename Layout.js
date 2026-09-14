@@ -879,7 +879,7 @@ function renderRules(rules, gdk) {
   var lines = [
     BEGIN_MARKER,
     "-- Written by the Displays plugin. Change it from the Displays bar popup or",
-    "-- Arrange displays; anything between these markers is replaced on the next change.",
+    "-- Setup displays; anything between these markers is replaced on the next change.",
     "local gdk_scale = " + Math.max(1, Math.round(Number(gdk) || 1)),
     'local fallback_scale = "auto"',
     'hl.env("GDK_SCALE", tostring(gdk_scale))'

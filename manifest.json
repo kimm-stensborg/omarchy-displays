@@ -19,7 +19,7 @@
   },
   "barWidget": {
     "displayName": "Displays",
-    "description": "Brightness, text size, per-display scale, and which displays are on, with a way into Arrange displays",
+    "description": "Brightness, text size and scale for the focused display, with a way into Setup displays",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right"

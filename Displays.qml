@@ -7,8 +7,8 @@ import qs.Ui
 import qs.Commons
 import "Layout.js" as Layout
 
-// The bar button and its popup: brightness, text size, scale, which displays
-// are on, and the way into Arrange displays. It replaces Omarchy's built-in
+// The bar button and its popup: brightness, text size and scale, and the way
+// into Setup displays for everything else. It replaces Omarchy's built-in
 // Display panel (omarchy.monitor), and follows it closely -- the same cursor
 // model, the same brightness debounce, the same text-size bridge -- except
 // where the built-in is broken:
@@ -21,7 +21,6 @@ import "Layout.js" as Layout
 //     rescaled display being parked at the end of the row by `auto`.
 //   - The scale presets are cleaned for the display's actual mode, so no
 //     button offers a scale Hyprland would quietly change.
-//   - Switching a display off survives a restart.
 Panel {
   id: root
   moduleName: "io.github.kimm-stensborg.displays"
@@ -103,8 +102,7 @@ Panel {
   //   "textsize"   - single slider row, same sentinel.
   //   "scale"      - the focused display's valid scales; one row from j/k's
   //                  perspective, h/l walks it.
-  //   "monitors"   - one row per display; j/k walks them.
-  //   "arrange"    - the row that opens Arrange displays.
+    //   "arrange"    - the row that opens Setup displays.
   // Mouse hover on a target updates root state, so keyboard cursor and
   // pointer share one highlight.
   readonly property var scaleValues: root.focusedDisplay
@@ -136,14 +134,12 @@ Panel {
     if (brightnessAvailable) list.push("brightness")
     list.push("textsize")
     if (scaleValues.length) list.push("scale")
-    if (displays.length > 1) list.push("monitors")
     list.push("arrange")
     return list
   }
 
   function sectionCount(section) {
     if (section === "scale") return scaleValues.length
-    if (section === "monitors") return displays.length
     return 0
   }
 
@@ -204,11 +200,7 @@ Panel {
       setScale(scaleValues[selectedIndex])
       return
     }
-    if (focusSection === "monitors" && selectedIndex >= 0 && selectedIndex < displays.length) {
-      toggleDisplay(displays[selectedIndex])
-      return
-    }
-    if (focusSection === "arrange") openArrange()
+    if (focusSection === "arrange") openSetup()
   }
 
   function clampCursor() {
@@ -377,20 +369,7 @@ Panel {
     root.commit(Layout.withChange(root.live, root.rules, d.name, { scale: Number(value) }))
   }
 
-  function toggleDisplay(d) {
-    if (!d) return
-    if (d.enabled && root.enabledDisplayCount <= 1) return
-    // The laptop panel goes through Omarchy's own toggle: clamshell switches a
-    // `disabled` internal rule straight back on.
-    if (d.internal) {
-      internalProc.command = ["omarchy-hyprland-monitor-internal", d.enabled ? "off" : "on"]
-      if (!internalProc.running) internalProc.running = true
-      return
-    }
-    root.commit(Layout.withChange(root.live, root.rules, d.name, { enabled: !d.enabled }))
-  }
-
-  function openArrange() {
+  function openSetup() {
     root.close()
     var api = root.shell || (root.bar ? root.bar.shell : null)
     if (api && typeof api.summon === "function") api.summon(root.pluginId, "{}")
@@ -562,12 +541,6 @@ Panel {
     }
   }
 
-  Process {
-    id: internalProc
-    stdout: StdioCollector { waitForEnd: true }
-    onRunningChanged: if (!running) refreshSoon.restart()
-  }
-
   // Hyprland reloads after a write; read back once it has.
   Timer {
     id: refreshSoon
@@ -654,7 +627,7 @@ Panel {
       onActivateRequested: if (root.cursorActive) root.activateCursor()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
-      onTextKey: function(text) { if (text === "a") root.openArrange() }
+      onTextKey: function(text) { if (text === "s") root.openSetup() }
 
       ScrollView {
         id: scrollArea
@@ -922,7 +895,7 @@ Panel {
               width: parent.width
               visible: root.enabledDisplayCount > 1
               textFormat: Text.PlainText
-              text: "󰋼  Only the focused display changes. Focus another display to scale it, or use Arrange displays."
+              text: "󰋼  Only the focused display changes. Focus another display to scale it, or use Setup displays."
               color: Color.accent
               font.family: root.bar.fontFamily
               font.pixelSize: Style.font.caption
@@ -980,123 +953,7 @@ Panel {
             }
           }
 
-          // ---------- Displays ----------
-          PanelSeparator {
-            visible: root.displays.length > 1
-            foreground: root.bar.foreground
-          }
-
-          Column {
-            width: parent.width
-            spacing: Style.space(10)
-            visible: root.displays.length > 1
-
-            PanelSectionHeader {
-              text: "DISPLAYS"
-              foreground: root.bar.foreground
-              fontFamily: root.bar.fontFamily
-            }
-
-            Repeater {
-              model: root.displays
-
-              CursorSurface {
-                id: monitorRow
-                required property var modelData
-                required property int index
-
-                readonly property bool canToggle: !modelData.enabled || root.enabledDisplayCount > 1
-
-                width: panelColumn.width
-                hasCursor: root.cursorActive && root.focusSection === "monitors" && root.selectedIndex === monitorRow.index
-                onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(monitorRow)
-                current: modelData.focused
-                foreground: root.bar.foreground
-                fill: Style.hoverFillFor(root.bar.foreground, Color.accent)
-                currentFill: Style.selectedFillFor(root.bar.foreground, Color.accent)
-                implicitHeight: monitorInner.implicitHeight + Style.spacing.xl
-                opacity: canToggle ? 1.0 : 0.45
-
-                Row {
-                  id: monitorInner
-                  anchors.left: parent.left
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  anchors.leftMargin: Style.space(6)
-                  anchors.rightMargin: Style.space(6)
-                  spacing: Style.space(8)
-
-                  Text {
-                    text: monitorRow.modelData.internal ? "󰌢" : "󰍹"
-                    color: root.bar.foreground
-                    font.family: root.bar.fontFamily
-                    font.pixelSize: Style.font.title
-                    width: Style.space(22)
-                    horizontalAlignment: Text.AlignHCenter
-                    anchors.verticalCenter: parent.verticalCenter
-                  }
-
-                  Column {
-                    width: parent.width - Style.space(22) - Style.space(14) - Style.space(16)
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Style.space(1)
-
-                    Text {
-                      textFormat: Text.PlainText
-                      text: Layout.displayName(monitorRow.modelData) + " · " + monitorRow.modelData.name
-                            + (monitorRow.modelData.focused ? " · focused" : "")
-                      color: root.bar.foreground
-                      font.family: root.bar.fontFamily
-                      font.pixelSize: Style.font.body
-                      elide: Text.ElideRight
-                      width: parent.width
-                    }
-
-                    Text {
-                      textFormat: Text.PlainText
-                      text: {
-                        var d = monitorRow.modelData
-                        if (!d.enabled) return "Off"
-                        var size = Layout.logicalSize(d)
-                        return d.width + "×" + d.height + " @ " + Layout.refreshLabel(d.refresh) + " Hz · "
-                          + Layout.scaleLabel(d.scale) + "x · " + size.width + "×" + size.height + " logical"
-                      }
-                      color: Qt.darker(root.bar.foreground, 1.4)
-                      font.family: root.bar.fontFamily
-                      font.pixelSize: Style.font.caption
-                      elide: Text.ElideRight
-                      width: parent.width
-                    }
-                  }
-
-                  Text {
-                    textFormat: Text.PlainText
-                    text: monitorRow.modelData.enabled ? "󰄬" : ""
-                    color: root.bar.foreground
-                    font.family: root.bar.fontFamily
-                    font.pixelSize: Style.font.subtitle
-                    width: Style.space(14)
-                    horizontalAlignment: Text.AlignRight
-                    anchors.verticalCenter: parent.verticalCenter
-                  }
-                }
-
-                MouseArea {
-                  anchors.fill: parent
-                  hoverEnabled: true
-                  cursorShape: monitorRow.canToggle ? Qt.PointingHandCursor : Qt.ArrowCursor
-                  onContainsMouseChanged: if (containsMouse && !root.reflowingText) {
-                    root.cursorActive = true
-                    root.focusSection = "monitors"
-                    root.selectedIndex = monitorRow.index
-                  }
-                  onClicked: if (monitorRow.canToggle) root.toggleDisplay(monitorRow.modelData)
-                }
-              }
-            }
-          }
-
-          // ---------- Arrange displays… ----------
+          // ---------- Setup displays… ----------
           PanelSeparator {
             foreground: root.bar.foreground
           }
@@ -1136,7 +993,7 @@ Panel {
 
                 Text {
                   textFormat: Text.PlainText
-                  text: "Arrange displays…"
+                  text: "Setup displays…"
                   color: root.bar.foreground
                   font.family: root.bar.fontFamily
                   font.pixelSize: Style.font.body
@@ -1145,7 +1002,7 @@ Panel {
                 }
                 Text {
                   textFormat: Text.PlainText
-                  text: "Position, resolution, refresh rate, rotation"
+                  text: "Position, resolution, refresh rate, rotation, on/off"
                   color: Qt.darker(root.bar.foreground, 1.4)
                   font.family: root.bar.fontFamily
                   font.pixelSize: Style.font.caption
@@ -1175,7 +1032,7 @@ Panel {
                 root.focusSection = "arrange"
                 root.selectedIndex = 0
               }
-              onClicked: root.openArrange()
+              onClicked: root.openSetup()
             }
           }
 

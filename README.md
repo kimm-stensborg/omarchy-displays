@@ -1,9 +1,10 @@
 # Displays
 
-Arrange displays, and set scale, resolution, refresh rate and rotation per
+Arrange your displays, and set scale, resolution, refresh rate and rotation per
 display, in a way that is persisted and stays that way. Displays replaces
-Omarchy's built-in Display panel (`omarchy.monitor`). It has the same bar popup,
-plus a drag canvas for the arrangement.
+Omarchy's built-in Display panel (`omarchy.monitor`). The bar popup keeps
+brightness, text size and scale; everything else is in Setup displays, a drag
+canvas for the arrangement and every per-display setting.
 
 ![Displays](preview.png)
 
@@ -71,7 +72,7 @@ o.bind("SUPER + CTRL + D", "Displays", "omarchy-shell io.github.kimm-stensborg.d
 This calls the popup's own IPC target rather than `omarchy-shell shell toggle`.
 The shell routes `summon` and `toggle` for a plugin that also has an overlay
 to that overlay, so `omarchy-shell shell toggle io.github.kimm-stensborg.displays`
-opens Arrange displays instead.
+opens Setup displays instead.
 
 Every monitor's bar has its own copy of the widget. Only the copy on the
 focused screen holds the IPC target, so the popup opens on the screen you're
@@ -101,8 +102,8 @@ back, or restore the `.bak`.
 
 ## The bar popup
 
-It offers everything the built-in panel did, in the same order, with the same
-keys:
+It keeps brightness, text size and scale from the built-in panel, with the
+same keys:
 
 - **Brightness**: the focused display's backlight, through
   `omarchy-brightness-display`. The scroll wheel on the bar icon changes it too.
@@ -111,26 +112,20 @@ keys:
   display's mode (see below).
   - It always names the display it targets.
   - It **only ever changes the focused display**. To scale another display,
-    focus it or use Arrange displays.
-- **Displays**: turn displays on or off. The last display that is on can't be
-  turned off.
-  - An external display is written into the block as `disabled = true`, so it
-    stays off across restarts.
-  - The laptop panel goes through Omarchy's own toggle
-    (`omarchy-hyprland-monitor-internal`), because clamshell turns a `disabled`
-    rule for the internal panel straight back on.
-- **Arrange displays…** opens the canvas.
+    focus it or use Setup displays.
+- **Setup displays…** opens the canvas, for everything else: arrangement,
+  resolution, refresh rate, rotation, and which displays are on.
 
 | Key | Action |
 |-----|--------|
 | `j` `k` / arrows | move between rows |
 | `h` `l` / arrows | adjust a slider, or walk the scale row |
-| `Enter` / `Space` | apply the scale under the cursor, toggle a display, open Arrange |
-| `a` | open Arrange displays |
+| `Enter` / `Space` | apply the scale under the cursor, or open Setup displays |
+| `s` | open Setup displays |
 | `Tab` | next bar popup |
 | `Esc` | close |
 
-## Arrange displays
+## Setup displays
 
 Each display is drawn at its **logical** size: physical size, rotated, divided
 by scale. That is the size Hyprland lays it out at, so changing a scale
@@ -149,6 +144,12 @@ anything is written.
 - The selected display has **scale** (the same presets), **resolution**,
   **refresh rate**, **rotation** (all eight transforms) and **on/off**.
   Changing any of them re-derives the arrangement around it.
+  - An external display switched off is written into the block as
+    `disabled = true`, so it stays off across restarts. The last display
+    that is on can't be switched off.
+  - The laptop panel is switched through Omarchy's own toggle
+    (`omarchy-hyprland-monitor-internal`) and takes effect at once, because
+    clamshell turns a `disabled` rule for the internal panel straight back on.
 
 **Apply → confirm → auto-revert.** Displays are the one setting that can leave
 the machine unusable, so Apply comes with a way back:
@@ -200,7 +201,7 @@ that is on, so GTK apps are never oversized on the plain screens.
 ```lua
 -- >>> displays managed -- do not edit by hand
 -- Written by the Displays plugin. Change it from the Displays bar popup or
--- Arrange displays; anything between these markers is replaced on the next change.
+-- Setup displays; anything between these markers is replaced on the next change.
 local gdk_scale = 1
 local fallback_scale = "auto"
 hl.env("GDK_SCALE", tostring(gdk_scale))

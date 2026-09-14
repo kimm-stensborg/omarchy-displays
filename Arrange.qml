@@ -7,7 +7,7 @@ import qs.Commons
 import qs.Ui
 import "Layout.js" as Layout
 
-// Arrange displays: the drag canvas.
+// Setup displays: the drag canvas.
 //
 // Every display is drawn at its logical size -- physical size, rotated,
 // divided by scale -- which is the size Hyprland lays it out at. So changing a
@@ -657,7 +657,7 @@ Item {
             spacing: Style.space(2)
 
             Text {
-              text: "Arrange displays"
+              text: "Setup displays"
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.title
