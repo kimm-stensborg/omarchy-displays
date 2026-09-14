@@ -26,6 +26,8 @@ o.bind("SUPER + CTRL + D", "Displays", "omarchy-shell io.github.kimm-stensborg.d
 
 ## Use
 
+![The bar popup](popup.png)
+
 - **The bar popup** has brightness, text size and scale for the monitor you're on.
 - **Setup displays**, opened from the popup or **Setup → Displays** in the Omarchy
   menu, is where you drag monitors into place. It also sets scale, resolution,
