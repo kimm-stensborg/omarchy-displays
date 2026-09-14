@@ -1002,7 +1002,7 @@ Panel {
                 }
                 Text {
                   textFormat: Text.PlainText
-                  text: "Position, resolution, refresh rate, rotation, on/off"
+                  text: "Arrangement, resolution, rotation, on/off"
                   color: Qt.darker(root.bar.foreground, 1.4)
                   font.family: root.bar.fontFamily
                   font.pixelSize: Style.font.caption
