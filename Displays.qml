@@ -669,8 +669,12 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(2)
 
+              // The focused display, which brightness and scale both act on --
+              // naming it here is what makes the rest of the popup read right.
               Text {
-                text: "Displays"
+                textFormat: Text.PlainText
+                text: root.focusedDisplay
+                  ? Layout.displayName(root.focusedDisplay) + " · " + root.focusedDisplay.name : "Displays"
                 color: root.bar.foreground
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.title
@@ -679,22 +683,6 @@ Panel {
                 width: parent.width
               }
 
-              Text {
-                textFormat: Text.PlainText
-                text: {
-                  if (root.brightnessAvailable) {
-                    return Layout.brightnessName(brightnessSlider.dragging ? brightnessSlider.liveValue : root.brightnessPercent).toUpperCase()
-                  }
-                  return "FIXED BRIGHTNESS"
-                }
-                color: Qt.darker(root.bar.foreground, 1.4)
-                font.family: root.bar.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1.2
-                elide: Text.ElideRight
-                width: parent.width
-              }
             }
           }
 
@@ -858,7 +846,7 @@ Panel {
 
             Item {
               width: parent.width
-              implicitHeight: Math.max(scaleHeader.implicitHeight, scaleMonitor.implicitHeight)
+              implicitHeight: scaleHeader.implicitHeight
 
               PanelSectionHeader {
                 id: scaleHeader
@@ -869,25 +857,6 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
               }
 
-              // Name the display SCALE targets, always: it only ever applies
-              // to the focused one, which is easy to lose track of.
-              Text {
-                id: scaleMonitor
-                textFormat: Text.PlainText
-                text: root.focusedDisplay
-                  ? Layout.displayName(root.focusedDisplay) + " · " + root.focusedDisplay.name : ""
-                color: Qt.darker(root.bar.foreground, 1.4)
-                font.family: root.bar.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                horizontalAlignment: Text.AlignRight
-                elide: Text.ElideLeft
-                anchors.left: scaleHeader.right
-                anchors.leftMargin: Style.space(8)
-                anchors.right: parent.right
-                anchors.rightMargin: Style.space(6)
-                anchors.verticalCenter: parent.verticalCenter
-              }
             }
 
             Grid {

@@ -102,15 +102,15 @@ back, or restore the `.bak`.
 
 ## The bar popup
 
-It keeps brightness, text size and scale from the built-in panel, with the
-same keys:
+Its title is the focused display, the one brightness and scale act on. It
+keeps brightness, text size and scale from the built-in panel, with the same
+keys:
 
 - **Brightness**: the focused display's backlight, through
   `omarchy-brightness-display`. The scroll wheel on the bar icon changes it too.
 - **Text size**: the shell and GTK text size, through `omarchy-display-text-size`.
 - **Scale**: 1, 1.25, 1.6, 2, 2.5, 3.2 and 4, adjusted for the focused
   display's mode (see below).
-  - It always names the display it targets.
   - It **only ever changes the focused display**. To scale another display,
     focus it or use Setup displays.
 - **Setup displays…** opens the canvas, for everything else: arrangement,
