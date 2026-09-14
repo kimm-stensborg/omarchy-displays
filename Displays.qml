@@ -52,7 +52,6 @@ Panel {
   // what a scale change is made against. Externals are on when the block says
   // so; the laptop panel is on when Omarchy's toggle and clamshell say so.
   readonly property var displays: Layout.layoutFrom(root.live, root.rules).layout
-  readonly property int enabledDisplayCount: root.displays.filter(function(d) { return d.enabled }).length
   readonly property var focusedDisplay: {
     for (var i = 0; i < root.displays.length; i++) {
       if (root.displays[i].focused) return root.displays[i]
@@ -889,17 +888,6 @@ Panel {
                 anchors.rightMargin: Style.space(6)
                 anchors.verticalCenter: parent.verticalCenter
               }
-            }
-
-            Text {
-              width: parent.width
-              visible: root.enabledDisplayCount > 1
-              textFormat: Text.PlainText
-              text: "󰋼  Only the focused display changes. Focus another display to scale it, or use Setup displays."
-              color: Color.accent
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.caption
-              wrapMode: Text.WordWrap
             }
 
             Grid {
