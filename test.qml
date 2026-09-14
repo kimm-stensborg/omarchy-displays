@@ -68,6 +68,10 @@ QtObject {
     drifted[1].scale = 1.6
     if (Layout.divergence(drifted, parsed.rules).length !== 1) throw new Error("divergence")
     if (!Layout.reconciled(drifted, parsed.rules)) throw new Error("reconciled")
+    var parked = Layout.parseMonitors(raw)
+    parked[1].x = 6528
+    if (Layout.drift(parked, parsed.rules).length !== 1) throw new Error("drift")
+    Layout.mirrored(parked)
 
     Layout.clampBrightness(140)
     Layout.brightnessName(50)

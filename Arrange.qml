@@ -634,7 +634,8 @@ Item {
     BorderSurface {
       id: card
       width: Math.min(Style.space(920), panel.width - Style.gapsOut * 2)
-      height: Math.min(content.implicitHeight + root.contentMargin * 2, panel.height - Style.gapsOut * 2)
+      height: Math.min(content.implicitHeight + card.contentTopInset + card.contentBottomInset,
+                       panel.height - Style.gapsOut * 2)
       radius: Style.cornerRadius
       anchors.centerIn: parent
       color: root.background
@@ -643,9 +644,14 @@ Item {
 
       MouseArea { anchors.fill: parent; onClicked: {} }
 
+      // BorderSurface only reports its insets; the content has to take them.
       PanelKeyCatcher {
         id: keys
         anchors.fill: parent
+        anchors.leftMargin: card.contentLeftInset
+        anchors.rightMargin: card.contentRightInset
+        anchors.topMargin: card.contentTopInset
+        anchors.bottomMargin: card.contentBottomInset
         blocked: resolutionDropdown.popupOpen || refreshDropdown.popupOpen || rotationDropdown.popupOpen
         onMoveRequested: function(dx, dy) {
           if (!root.cursorActive) { root.cursorActive = true; return }
@@ -1154,8 +1160,9 @@ Item {
       }
 
       BorderSurface {
+        id: confirmCard
         width: Math.min(Style.space(460), confirmWindow.width - Style.gapsOut * 2)
-        height: confirmColumn.implicitHeight + root.contentMargin * 2
+        height: confirmColumn.implicitHeight + confirmCard.contentTopInset + confirmCard.contentBottomInset
         anchors.centerIn: parent
         radius: Style.cornerRadius
         color: root.background
@@ -1164,6 +1171,10 @@ Item {
 
         Item {
           anchors.fill: parent
+          anchors.leftMargin: confirmCard.contentLeftInset
+          anchors.rightMargin: confirmCard.contentRightInset
+          anchors.topMargin: confirmCard.contentTopInset
+          anchors.bottomMargin: confirmCard.contentBottomInset
           focus: true
           Component.onCompleted: if (confirmWindow.focusedHere) forceActiveFocus()
 

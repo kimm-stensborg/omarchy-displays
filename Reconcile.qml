@@ -52,13 +52,13 @@ Item {
   property bool ready: false
   property string stage: ""
 
-  // A divergence seen once, waiting for a second look before it is believed.
+  // A disagreement seen once, waiting for a second look before it is believed.
   property string candidate: ""
-  // The last divergence written down. If the same one is back within a minute,
-  // Hyprland is refusing the scale for some reason, and writing it again would
-  // only reload in a loop.
-  property string lastWritten: ""
-  property real lastWrittenAt: 0
+  // The disagreement last acted on. If exactly that one is still there after
+  // acting, Hyprland is refusing it for some reason, and acting again would
+  // only reload in a loop -- so it is left alone until the state changes.
+  property string lastActed: ""
+  property string warned: ""
 
   function parse(text) {
     try { return JSON.parse(String(text || "")) } catch (e) { return null }
@@ -231,11 +231,17 @@ Item {
     onTriggered: root.sample()
   }
 
+  function settled() {
+    root.candidate = ""
+    root.lastActed = ""
+    root.warned = ""
+  }
+
   function sample() {
-    if (!root.ready || writeProc.running) return
+    if (!root.ready || writeProc.running || reloadProc.running) return
     root.readLive(function() {
-      if (!Layout.divergence(root.live, root.rules).length) {
-        root.candidate = ""
+      if (!Layout.divergence(root.live, root.rules).length && !Layout.drift(root.live, root.rules).length) {
+        root.settled()
         return
       }
       // The cached block may simply be old -- the popup or Arrange may have
@@ -253,21 +259,39 @@ Item {
       return
     }
     var diverged = Layout.divergence(root.live, root.rules)
-    if (!diverged.length) {
-      root.candidate = ""
+    // A scale change is written down, and its reload fixes positions too, so
+    // drift only counts when the scales all agree.
+    var drifted = diverged.length ? [] : Layout.drift(root.live, root.rules)
+    if (!diverged.length && !drifted.length) {
+      root.settled()
       return
     }
 
-    var key = JSON.stringify(diverged.map(function(d) { return [d.name, Layout.scaleUnits(d.live)] }))
+    var key = JSON.stringify({
+      scale: diverged.map(function(d) { return [d.name, Layout.scaleUnits(d.live)] }),
+      position: drifted.map(function(d) { return [d.name, d.live] })
+    })
+    if (key === root.lastActed) {
+      if (root.warned !== key) {
+        root.warned = key
+        console.warn(root.pluginId, "Hyprland did not take the declared layout; leaving it:", key)
+      }
+      return
+    }
     if (key !== root.candidate) {
       root.candidate = key
       secondLook.restart()
       return
     }
     root.candidate = ""
+    root.lastActed = key
 
-    if (key === root.lastWritten && Date.now() - root.lastWrittenAt < 60000) {
-      console.warn(root.pluginId, "scale did not stick after being written down; leaving it:", key)
+    if (!diverged.length) {
+      // omarchy-hyprland-monitor-scaling applies with `position = "auto"` even
+      // when the scale is unchanged. The block is already right; reloading it
+      // puts the displays back.
+      console.info(root.pluginId, "putting displays back where monitors.lua says:", key)
+      reloadProc.running = true
       return
     }
 
@@ -278,11 +302,15 @@ Item {
       console.warn(root.pluginId, "not recording an out-of-band scale change:", check.reason)
       return
     }
-    root.lastWritten = key
-    root.lastWrittenAt = Date.now()
     console.info(root.pluginId, "recording out-of-band scale:", key)
     writeProc.command = root.py(["write", "--text", result.block])
     writeProc.running = true
+  }
+
+  Process {
+    id: reloadProc
+    command: ["hyprctl", "reload"]
+    stdout: StdioCollector { waitForEnd: true }
   }
 
   Process {

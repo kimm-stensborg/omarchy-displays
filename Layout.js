@@ -307,6 +307,7 @@ function parseMonitors(raw) {
       transform: (Number(m.transform) || 0) & 7,
       x: Math.round(Number(m.x) || 0),
       y: Math.round(Number(m.y) || 0),
+      mirrorOf: String(m.mirrorOf || "none"),
       modes: modes
     })
   }
@@ -936,20 +937,57 @@ function adoptionBlock(live) {
 
 // ------------------------------------------------------------- reconciler
 
+// Displays taking part in a mirror, either side. Omarchy's mirror toggle puts
+// them somewhere the block does not say, on purpose, so they are left alone.
+function mirrored(live) {
+  var names = {}
+  for (var i = 0; i < (live || []).length; i++) {
+    var target = live[i].mirrorOf
+    if (target && target !== "none") {
+      names[live[i].name] = true
+      names[target] = true
+    }
+  }
+  return names
+}
+
 // Displays whose live scale is not the one the block declares. Something
 // applied it without writing it down -- omarchy-hyprland-monitor-scaling from
 // SUPER+/ or the Omarchy menu, whose sed never matches a managed block.
 function divergence(live, rules) {
   var out = []
+  var skip = mirrored(live)
   for (var i = 0; i < (live || []).length; i++) {
     var m = live[i]
-    if (!m.enabled) continue
+    if (!m.enabled || skip[m.name]) continue
     var r = matchRule(m, rules)
     if (!r || r.disabled) continue
     var declared = Number(r.scale)
     if (!(declared > 0)) continue
     if (scaleUnits(m.scale) !== scaleUnits(declared))
       out.push({ name: m.name, declared: declared, live: m.scale })
+  }
+  return out
+}
+
+// Displays at the declared scale but not at the declared position. The same
+// script does this even when the scale it sets is the one already there: it
+// always applies with `position = "auto"`, which parks the display at the end
+// of the row. Nothing needs writing down -- the block is right -- so the
+// answer is a reload.
+function drift(live, rules) {
+  var out = []
+  var skip = mirrored(live)
+  for (var i = 0; i < (live || []).length; i++) {
+    var m = live[i]
+    if (!m.enabled || skip[m.name]) continue
+    var r = matchRule(m, rules)
+    if (!r || r.disabled) continue
+    var pos = POSITION_PATTERN.exec(String(r.position || ""))
+    if (!pos) continue
+    if (scaleUnits(m.scale) !== scaleUnits(Number(r.scale))) continue
+    if (m.x !== Number(pos[1]) || m.y !== Number(pos[2]))
+      out.push({ name: m.name, declared: [Number(pos[1]), Number(pos[2])], live: [m.x, m.y] })
   }
   return out
 }

@@ -304,6 +304,18 @@ check("nothing to reconcile", L.reconciled(live, declared), null)
         [["DP-7", 0, 0], ["DP-5", 2560, 0], ["eDP-1", 4160, 0]])
   ok("with the new scale written", r.block.includes('position = "2560x0", scale = 1.6'))
 }
+{
+  // The same script with the scale already in place: nothing to write down,
+  // but `auto` has still moved the display to the end of the row.
+  const parked = withLive({ "DP-5": { x: 6528 } })
+  check("an unchanged scale is not a divergence", L.divergence(parked, declared), [])
+  check("but the position is drift", L.drift(parked, declared).map(d => [d.name, d.declared, d.live]),
+        [["DP-5", [2560, 0], [6528, 0]]])
+  check("a matching desk has no drift", L.drift(live, declared), [])
+  const mirroring = withLive({ "eDP-1": { mirrorOf: "DP-5", x: 2560, scale: 2 } })
+  check("a mirror is not drift", L.drift(mirroring, declared), [])
+  check("nor a divergence", L.divergence(mirroring, declared), [])
+}
 check("float noise is not a divergence", L.divergence(withLive({ "DP-5": { scale: 1.0000001 } }), declared), [])
 check("a switched-off display is not a divergence",
       L.divergence(withLive({ "eDP-1": { disabled: true, scale: 2 } }), declared), [])

@@ -237,8 +237,15 @@ The service (`Reconcile.qml`) watches for exactly this:
   it writes the new scale into the block. It re-derives the arrangement from
   the declared layout, not the scrambled live one.
 - The reload that write causes puts every display back where the block says.
-- If the same scale is still refused a minute later, it stops trying, rather
-  than looping.
+- The script parks the display with `position = "auto"` even when the scale
+  it sets is already the one in place. That kind of drift needs nothing
+  written down, since the block is already right, so the service runs
+  `hyprctl reload`.
+- Mirrored displays are left alone. Omarchy's mirror toggle puts them
+  somewhere the block doesn't say, on purpose.
+- If Hyprland still doesn't take the declared layout after one attempt, the
+  service leaves that exact state alone until something changes, rather than
+  reloading in a loop.
 
 ## What it remembers
 
