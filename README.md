@@ -40,7 +40,10 @@ o.bind("SUPER + CTRL + D", "Displays", "omarchy-shell io.github.kimm-stensborg.d
   - After **Apply** you have 15 seconds to keep the change. Otherwise it
     reverts, so a bad setting can't lock you out.
 
-Scale changes made elsewhere, like Omarchy's `SUPER + /`, are kept too. Each set
+Scale changes made elsewhere, like Omarchy's `SUPER + /`, are kept too — on an
+external monitor. On the laptop panel they are not: Omarchy syncs that panel to
+whatever `monitors.lua` says within a second of any monitor change, so it goes
+straight back. Change that one from here. Each set
 of monitors keeps its own layout: unplug the laptop from your desk and plug it
 back in, and the desk comes back just as you left it. Plug in a monitor it has
 never seen, and a notification offers to place it.
