@@ -16,19 +16,26 @@ import "Layout.js" as Layout
 //   retire    disable the old omarchy-monitor-scale-persist unit, if present
 //   supersede take Omarchy's own Display widget off the bar, once
 //   menu      add Setup → Displays to the Omarchy menu, once
+//   bind      point SUPER + / at this plugin, once
 //
 // Every one of them is a no-op once done, so running them at each start costs
 // a few milliseconds and nothing else.
 //
 // After that it reconciles. Scale can still be changed behind the plugin's
-// back: omarchy-hyprland-monitor-scaling is bound to SUPER+/ and sits in the
-// Omarchy menu, applies live, and never writes it down (its sed does not match
-// a managed block). Left alone, the next reload would silently undo it, and its
-// `position = "auto"` has already knocked the monitor out of the row. So when a
-// live scale disagrees with the block -- twice, a moment apart, with no write
-// of our own still landing -- the new scale is written down and the
-// arrangement re-derived around it. The write is the apply step: the reload it
-// causes puts every monitor back where the block says.
+// back: omarchy-hyprland-monitor-scaling still sits in the Omarchy menu and
+// can be run from a terminal, applies live, and never writes it down (its sed
+// does not match a managed block). Left alone, the next reload would silently
+// undo it, and its `position = "auto"` has already knocked the monitor out of
+// the row. So when a live scale disagrees with the block -- twice, a moment
+// apart, with no write of our own still landing -- the new scale is written
+// down and the arrangement re-derived around it. The write is the apply step:
+// the reload it causes puts every monitor back where the block says.
+//
+// That adoption cannot save the laptop panel, which is why `bind` exists.
+// omarchy-hyprland-monitor-clamshell reads the internal rule's scale straight
+// out of monitors.lua and evals the panel back to it within a second of the
+// monitor event the change itself raises -- long before a second look. The
+// binding writes the block first instead, and clamshell then agrees with it.
 Item {
   id: root
 
@@ -106,6 +113,7 @@ Item {
                                    root.pluginRegistry.inBar(root.stockId) ? "in" : "out"])
     }
     else if (next === "menu") startProc.command = root.py(["menu"])
+    else if (next === "bind") startProc.command = root.py(["bind"])
     else {
       root.ready = true
       root.sample()
@@ -151,6 +159,10 @@ Item {
     } else if (root.stage === "menu") {
       if (payload && payload.status === "added")
         root.notify("Added to the Omarchy menu under Setup → Displays")
+      root.step("bind")
+    } else if (root.stage === "bind") {
+      if (payload && payload.status === "added")
+        root.notify("SUPER + / steps the focused display's scale again, and it is written down")
       root.step("done")
     }
   }
@@ -264,6 +276,52 @@ Item {
     root.candidate = ""
     root.lastActed = ""
     root.warned = ""
+  }
+
+  // ── stepping the scale from the keyboard ──────────────────────────────────
+  //
+  // SUPER + / used to reach omarchy-hyprland-monitor-scaling, which applies
+  // live and then seds the scale into monitors.lua. It cannot sed a managed
+  // block, so it stopped writing anything -- and on the laptop panel
+  // omarchy-hyprland-monitor-clamshell, which reads the internal rule's scale
+  // straight out of that file, puts the panel back within a second of the
+  // monitor event the change itself raises. Racing it is not winnable and not
+  // worth winning: writing the block first is, because clamshell reads the
+  // file and agrees with whatever it now says.
+  //
+  // Reached over IPC from the bindings, through the overlay -- `shell call`
+  // finds a panel instance, not a service -- so Arrange.qml forwards to here.
+
+  function scaleStep(direction) {
+    if (!root.ready || root.pending || writeProc.running || reloadProc.running) return "busy"
+    // Focus moves far more often than the poll looks, and the block may have
+    // been written by the popup since. Both fresh, then act.
+    root.readBlock(function() { root.readLive(function() { root.applyScaleStep(direction) }) })
+    return "ok"
+  }
+
+  function applyScaleStep(direction) {
+    var focused = null
+    for (var i = 0; i < root.live.length; i++)
+      if (root.live[i].focused && root.live[i].enabled) { focused = root.live[i]; break }
+    if (!focused) {
+      console.warn(root.pluginId, "scaleStep: no focused display")
+      return
+    }
+    var next = Layout.stepScale(focused.width, focused.height, focused.scale, direction)
+    if (Layout.scaleUnits(next) === Layout.scaleUnits(focused.scale)) return  // end of the row
+
+    var result = Layout.withChange(root.live, root.rules, focused.name, { scale: next }, root.desks)
+    if (!result) return
+    if (!result.check.ok) {
+      console.warn(root.pluginId, "scaleStep:", result.check.reason)
+      return
+    }
+    // Written, not applied: the reload the write causes is the apply step, and
+    // it is what puts every display back where the block says.
+    console.info(root.pluginId, "scale", direction, "on", focused.name + ":", next)
+    writeProc.command = root.py(["write", "--text", result.block])
+    writeProc.running = true
   }
 
   // ── a monitor nobody has placed ───────────────────────────────────────────

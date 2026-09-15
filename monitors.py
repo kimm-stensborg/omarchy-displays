@@ -28,6 +28,7 @@ subcommand speaks JSON on stdout:
   retire                              disable the old omarchy-monitor-scale-persist unit
   supersede --stock in|out            answer, once, whether to take Omarchy's
                                       own Display widget off the bar
+  bind                                point SUPER + / at this plugin, once
 """
 
 import base64
@@ -817,6 +818,73 @@ def cmd_supersede(argv):
     return reply(True, status="proceed")
 
 
+# ------------------------------------------------------------------ binding
+#
+# SUPER + / used to reach omarchy-hyprland-monitor-scaling, which applied the
+# scale live and then sed'd it into monitors.lua. It cannot sed a managed
+# block, so it stopped writing anything -- and on the laptop panel
+# omarchy-hyprland-monitor-clamshell reads the internal rule's scale out of
+# that same file and puts the panel back within a second. Pointing the two
+# bindings at the plugin writes the block first, and clamshell then reads it
+# and agrees. Same keys, same job, and it sticks again.
+
+BIND_MARKER = "-- Displays scale steps (%s)" % PLUGIN_ID
+BIND_CALL = "omarchy-shell shell call %s scaleStep" % PLUGIN_ID
+BIND_ROWS = """%s
+hl.unbind("SUPER + SLASH")
+hl.unbind("SUPER + ALT + SLASH")
+o.bind("SUPER + SLASH", "Monitor scaling up", "%s up")
+o.bind("SUPER + ALT + SLASH", "Monitor scaling down", "%s down")
+""" % (BIND_MARKER, BIND_CALL, BIND_CALL)
+
+BINDINGS_LUA = os.environ.get("DISPLAYS_BINDINGS_LUA") or os.path.join(
+    HOME, ".config", "hypr", "bindings.lua"
+)
+
+
+def bind_state_path():
+    return os.path.join(
+        _env_dir("XDG_STATE_HOME", HOME + "/.local/state"), "omarchy-displays", "scale-binds"
+    )
+
+
+def cmd_bind(argv):
+    state = bind_state_path()
+    try:
+        with open(BINDINGS_LUA, "r", encoding="utf-8") as fh:
+            text = fh.read()
+        existed = True
+    except FileNotFoundError:
+        text, existed = "", False
+    except (OSError, UnicodeDecodeError) as err:
+        return reply(False, status="unreadable", error=str(err))
+
+    if BIND_MARKER in text or BIND_CALL in text:
+        try:
+            remember(state)
+        except OSError:
+            pass
+        return reply(True, status="present")
+    # Taken out by hand after an earlier run added them: that is an answer.
+    if os.path.exists(state):
+        return reply(True, status="declined")
+
+    updated = text
+    if updated and not updated.endswith("\n"):
+        updated += "\n"
+    if updated:
+        updated += "\n"
+    updated += BIND_ROWS
+    try:
+        if existed:
+            shutil.copy2(BINDINGS_LUA, "%s.bak.%d" % (BINDINGS_LUA, int(time.time())))
+        atomic_write(BINDINGS_LUA, updated)
+        remember(state)
+    except OSError as err:
+        return reply(False, status="error", error=str(err))
+    return reply(True, status="added")
+
+
 COMMANDS = {
     "read": cmd_read,
     "check": cmd_check,
@@ -829,6 +897,7 @@ COMMANDS = {
     "menu": cmd_menu,
     "retire": cmd_retire,
     "supersede": cmd_supersede,
+    "bind": cmd_bind,
 }
 
 

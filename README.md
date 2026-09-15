@@ -14,8 +14,9 @@ omarchy plugin enable io.github.kimm-stensborg.displays --section right --after 
 
 On first start it takes over `~/.config/hypr/monitors.lua`, and nothing on
 screen changes. Your old file is kept next to it as `monitors.lua.bak.<timestamp>`.
-It also takes Omarchy's own Display widget off the bar, once, since it does the
-same job. Put that widget back and it stays there.
+It also takes Omarchy's own Display widget off the bar and points `SUPER + /`
+at itself, once each, since both do the same job. Put either back by hand and
+it stays that way.
 
 To open it with `SUPER + CTRL + D`, add this to `~/.config/hypr/bindings.lua`:
 
@@ -40,10 +41,10 @@ o.bind("SUPER + CTRL + D", "Displays", "omarchy-shell io.github.kimm-stensborg.d
   - After **Apply** you have 15 seconds to keep the change. Otherwise it
     reverts, so a bad setting can't lock you out.
 
-Scale changes made elsewhere, like Omarchy's `SUPER + /`, are kept too — on an
-external monitor. On the laptop panel they are not: Omarchy syncs that panel to
-whatever `monitors.lua` says within a second of any monitor change, so it goes
-straight back. Change that one from here. Each set
+`SUPER + /` and `SUPER + ALT + /` still step the focused display's scale, and
+now go through here, so the change is written down and stays — on the laptop
+panel too. A scale set from somewhere else, a terminal say, is picked up and
+recorded as well. Each set
 of monitors keeps its own layout: unplug the laptop from your desk and plug it
 back in, and the desk comes back just as you left it. Plug in a monitor it has
 never seen, and a notification offers to place it.

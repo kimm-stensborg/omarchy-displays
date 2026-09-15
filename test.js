@@ -148,6 +148,17 @@ check("an off-list current scale is still shown",
 check("an on-list current scale adds nothing", L.scaleOptions(2560, 1440, 1.6).length, 7)
 check("no mode, no options", L.scaleOptions(0, 0, 1), [])
 
+// What SUPER + / walks along.
+check("a step up", L.scaleLabel(L.stepScale(1920, 1200, 1.25, "up")), "1.6")
+check("a step down", L.scaleLabel(L.stepScale(1920, 1200, 1.25, "down")), "1")
+check("the bottom of the row stays put", L.stepScale(1920, 1200, 1, "down"), 1)
+check("and the top", L.stepScale(1920, 1200, 4, "up"), 4)
+// Hyprland reports floats, so stepping has to snap before it moves.
+check("an off-list scale snaps to its neighbour first",
+      L.scaleLabel(L.stepScale(2560, 1440, 1.0666667, "up")), "1.25")
+check("anything that is not down is up", L.scaleLabel(L.stepScale(1920, 1200, 1, "")), "1.25")
+check("no mode, no step", L.stepScale(0, 0, 1.25, "up"), 1.25)
+
 check("clamped to g/120 on a tiny mode", L.cleanScale(4, 2, 2), 2)
 check("a mode below 1x still has a ladder", L.scaleLadder(1, 1), [1])
 check("no mode, no ladder", L.scaleLadder(0, 1080), [])
@@ -665,6 +676,34 @@ try {
   ok("answers the question all the same", fs.existsSync(marker(never)))
   check("so adding it afterwards leaves it",
     pyState(never, "supersede", "--stock", "in").status, "declined")
+
+  // ------------------------------------------- pointing SUPER + / at us
+  const BIND_LUA = path.join(scratch, "bindings.lua")
+  const bindEnv = (home) => ({ XDG_STATE_HOME: home, DISPLAYS_BINDINGS_LUA: BIND_LUA })
+  function pyBind(home) {
+    const r = cp.spawnSync("python3", [path.join(__dirname, "monitors.py"), "bind"],
+      { env: Object.assign({}, ENV, bindEnv(home)), encoding: "utf8" })
+    try { return JSON.parse(r.stdout) } catch (e) { return { ok: false, raw: r.stdout } }
+  }
+  const bound = path.join(scratch, "bound")
+
+  fs.writeFileSync(BIND_LUA, 'o.bind("SUPER + B", "Browser", { launch = "chromium" })\n')
+  check("the bindings go in once", pyBind(bound).status, "added")
+  const withBinds = fs.readFileSync(BIND_LUA, "utf8")
+  ok("the user's own binding is kept", withBinds.includes('"SUPER + B"'))
+  // Omarchy binds both keys itself, so they have to be taken out first or the
+  // stock scaling script keeps the key and this plugin never sees it.
+  ok("SUPER + / is unbound first", withBinds.includes('hl.unbind("SUPER + SLASH")'))
+  ok("and ALT too", withBinds.includes('hl.unbind("SUPER + ALT + SLASH")'))
+  ok("up is bound to the plugin", withBinds.includes("scaleStep up"))
+  ok("down as well", withBinds.includes("scaleStep down"))
+  check("a second run adds nothing", pyBind(bound).status, "present")
+  check("and the file is untouched", fs.readFileSync(BIND_LUA, "utf8"), withBinds)
+
+  // Taken out by hand: the keys are the user's again.
+  fs.writeFileSync(BIND_LUA, 'o.bind("SUPER + B", "Browser", { launch = "chromium" })\n')
+  check("bindings removed by hand stay removed", pyBind(bound).status, "declined")
+  ok("nothing was put back", !fs.readFileSync(BIND_LUA, "utf8").includes("scaleStep"))
 } finally {
   // Give a watchdog still sleeping on the last snapshot a moment to notice
   // it is resolved before its directory goes.

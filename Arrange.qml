@@ -52,6 +52,19 @@ Item {
 
   property bool opened: false
 
+  // The headless half, handed over by the shell because this plugin pairs a
+  // panel with a service. Only the scale-step bindings need it.
+  property var service: null
+
+  // `omarchy-shell shell call` finds a panel instance, never a service, so the
+  // SUPER + / bindings land here and go straight back out. Nothing about
+  // stepping the scale belongs to this overlay, and it works whether or not
+  // Setup displays has ever been opened.
+  function scaleStep(direction) {
+    if (!root.service || typeof root.service.scaleStep !== "function") return "unknown"
+    return root.service.scaleStep(direction)
+  }
+
   // ── model ─────────────────────────────────────────────────────────────────
 
   property var live: []

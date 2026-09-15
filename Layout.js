@@ -131,6 +131,24 @@ function scaleOptions(width, height, current) {
   return out
 }
 
+// One step along that row, for the SUPER + / bindings. Snaps to the nearest
+// offered scale first -- Hyprland reports floats, so an exact match cannot be
+// relied on -- then moves one place. At either end it stays put, and says so
+// by returning the scale it came in with.
+function stepScale(width, height, current, direction) {
+  var options = scaleOptions(width, height, current)
+  if (!options.length) return current
+  var best = 0
+  var bestDiff = Infinity
+  for (var i = 0; i < options.length; i++) {
+    var diff = Math.abs(options[i] - current)
+    if (diff < bestDiff) { bestDiff = diff; best = i }
+  }
+  var next = String(direction) === "down" ? best - 1 : best + 1
+  if (next < 0 || next >= options.length) return current
+  return options[next]
+}
+
 function trimNumber(text) {
   text = String(text)
   if (text.indexOf(".") < 0) return text
