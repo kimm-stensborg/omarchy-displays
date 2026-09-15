@@ -26,6 +26,8 @@ subcommand speaks JSON on stdout:
   recover                             undo it if its deadline passed unconfirmed
   menu                                add "Displays" to the Omarchy menu, once
   retire                              disable the old omarchy-monitor-scale-persist unit
+  supersede --stock in|out            answer, once, whether to take Omarchy's
+                                      own Display widget off the bar
 """
 
 import base64
@@ -684,11 +686,13 @@ def insert_menu_row(text, row):
     return "\n".join(head + [MENU_MARKER, row, "}"] + lines[close + 1 :])
 
 
-def remember_menu_row(state):
-    if os.path.exists(state):
+def remember(path):
+    """A file that exists means the question was asked once. Its line is when,
+    for whoever finds it."""
+    if os.path.exists(path):
         return
-    os.makedirs(os.path.dirname(state), exist_ok=True)
-    with open(state, "w", encoding="utf-8") as fh:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
         fh.write(time.strftime("%Y-%m-%dT%H:%M:%S%z") + "\n")
 
 
@@ -709,7 +713,7 @@ def cmd_menu(argv):
         return reply(False, status="unreadable", error="the Omarchy menu cannot parse %s" % path)
     if MENU_ID in current or PLUGIN_ID in text:
         try:
-            remember_menu_row(state)
+            remember(state)
         except OSError:
             pass
         return reply(True, status="present")
@@ -734,7 +738,7 @@ def cmd_menu(argv):
         if existed:
             shutil.copy2(target, "%s.bak.%d" % (target, int(time.time())))
         atomic_write(path, updated)
-        remember_menu_row(state)
+        remember(state)
     except OSError as err:
         return reply(False, status="error", error=str(err))
     return reply(True, status="added")
@@ -764,6 +768,55 @@ def cmd_retire(argv):
     return reply(ok, status="disabled" if ok else "error", error=done.stderr.strip())
 
 
+# --------------------------------------------------- superseding the widget
+#
+# Omarchy's own Display widget does the same job on the bar, and its scale
+# control shells out to omarchy-hyprland-monitor-scaling, which applies live
+# and cannot write into a managed block -- so the next reconcile undoes it.
+# Two controls, one of which silently loses. `omarchy plugin add` runs no
+# install hook, so the README used to ask for it to be taken off by hand.
+#
+# Taking it off is a removal from bar.layout and nothing else: shell.json
+# records no "off" for a bar widget. So afterwards the bar cannot say whether
+# it was never there or was taken off, and a user who put it back would lose
+# it at every restart. This file is the difference: once it exists, the
+# question has been answered and the bar is theirs.
+#
+# The bar is not touched from here. shell.json is written by the running
+# shell, whole, from its own copy in memory; an edit from outside would be
+# lost the next time anything else changed. The QML makes the call through the
+# registry it was handed. This only decides and remembers.
+
+
+def stock_state_path():
+    return os.path.join(
+        _env_dir("XDG_STATE_HOME", HOME + "/.local/state"), "omarchy-displays", "stock-widget"
+    )
+
+
+def cmd_supersede(argv):
+    """--stock in|out is what the shell says about omarchy.monitor's place on
+    the bar. Answers `proceed` at most once."""
+    stock = argv[1] if len(argv) > 1 and argv[0] == "--stock" else ""
+    if stock not in ("in", "out"):
+        return reply(False, status="usage", error="supersede --stock in|out")
+
+    state = stock_state_path()
+    decided = os.path.exists(state)
+    try:
+        remember(state)
+    except OSError as err:
+        # Nothing decided, so the next start asks again.
+        return reply(False, status="error", error=str(err))
+
+    if stock == "out":
+        return reply(True, status="absent")
+    # Put back by hand after an earlier run took it off: that is an answer.
+    if decided:
+        return reply(True, status="declined")
+    return reply(True, status="proceed")
+
+
 COMMANDS = {
     "read": cmd_read,
     "check": cmd_check,
@@ -775,6 +828,7 @@ COMMANDS = {
     "watchdog": cmd_watchdog,
     "menu": cmd_menu,
     "retire": cmd_retire,
+    "supersede": cmd_supersede,
 }
 
 

@@ -540,6 +540,14 @@ function py(...args) {
   try { return JSON.parse(r.stdout) } catch (e) { return { ok: false, raw: r.stdout, stderr: r.stderr } }
 }
 
+// The same, with a state directory of its own. DISPLAYS_STATE_FILE above is
+// absolute, so pointing XDG_STATE_HOME elsewhere cannot disturb the snapshots.
+function pyState(home, ...args) {
+  const r = cp.spawnSync("python3", [path.join(__dirname, "monitors.py")].concat(args),
+    { env: Object.assign({}, ENV, { XDG_STATE_HOME: home }), encoding: "utf8" })
+  try { return JSON.parse(r.stdout) } catch (e) { return { ok: false, raw: r.stdout, stderr: r.stderr } }
+}
+
 try {
   // The legacy file shows why the rules exist: both gates fire, and clamshell
   // cannot read the laptop's computed position.
@@ -634,6 +642,29 @@ try {
   check("a revert after an outside edit", py("revert").how, "block")
   ok("keeps the edit", fs.readFileSync(LUA, "utf8").startsWith("-- a note\n"))
   ok("and restores the block", fs.readFileSync(LUA, "utf8").includes(", transform = 1 })"))
+
+  // ------------------------------------- superseding Omarchy's own widget
+  //
+  // The bar itself is never touched from python -- the QML makes that call --
+  // so this is the whole of the decision: what the shell said about the stock
+  // widget, and whether the question has been asked before.
+  const seen = path.join(scratch, "seen"), never = path.join(scratch, "never")
+  const marker = (home) => path.join(home, "omarchy-displays", "stock-widget")
+
+  check("--stock is required", pyState(seen, "supersede").status, "usage")
+  check("a bar carrying both, once", pyState(seen, "supersede", "--stock", "in").status, "proceed")
+  ok("and the question is remembered", fs.existsSync(marker(seen)))
+  check("a widget put back by hand is left alone",
+    pyState(seen, "supersede", "--stock", "in").status, "declined")
+  check("a bar without it needs nothing",
+    pyState(seen, "supersede", "--stock", "out").status, "absent")
+
+  // The regression the marker exists for: a bar that never carried it still
+  // answers the question, so adding it later is the user's choice to keep.
+  check("a bar that never had it", pyState(never, "supersede", "--stock", "out").status, "absent")
+  ok("answers the question all the same", fs.existsSync(marker(never)))
+  check("so adding it afterwards leaves it",
+    pyState(never, "supersede", "--stock", "in").status, "declined")
 } finally {
   // Give a watchdog still sleeping on the last snapshot a moment to notice
   // it is resolved before its directory goes.

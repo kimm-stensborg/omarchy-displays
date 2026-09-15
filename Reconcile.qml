@@ -14,6 +14,7 @@ import "Layout.js" as Layout
 //   recover   undo an Apply whose confirm countdown was interrupted
 //   adopt     take over ~/.config/hypr/monitors.lua, once, with a .bak
 //   retire    disable the old omarchy-monitor-scale-persist unit, if present
+//   supersede take Omarchy's own Display widget off the bar, once
 //   menu      add Setup → Displays to the Omarchy menu, once
 //
 // Every one of them is a no-op once done, so running them at each start costs
@@ -35,8 +36,11 @@ Item {
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var shell: null
   property var manifest: null
+  property var pluginRegistry: null
 
   readonly property string pluginId: "io.github.kimm-stensborg.displays"
+  // Omarchy's own Display widget, the one this plugin takes the place of.
+  readonly property string stockId: "omarchy.monitor"
   readonly property string pluginDir: root.manifest && root.manifest.__sourceDir
     ? String(root.manifest.__sourceDir)
     : Quickshell.env("HOME") + "/.config/omarchy/plugins/" + root.pluginId
@@ -90,6 +94,17 @@ Item {
     if (next === "recover") startProc.command = root.py(["recover"])
     else if (next === "adopt") startProc.command = root.py(["adopt", "--text", Layout.adoptionBlock(root.live)])
     else if (next === "retire") startProc.command = root.py(["retire"])
+    else if (next === "supersede") {
+      // Only when this plugin's own widget is the one on the bar. Taking the
+      // stock widget off a bar this plugin is not on would leave a user with
+      // no display control at all. inBar is the question to ask -- isEnabled
+      // answers true for any built-in, whether or not it is on the bar -- and
+      // it does not resolve clones, so someone running a copy of the stock
+      // widget keeps it.
+      if (!root.pluginRegistry || !root.pluginRegistry.inBar(root.pluginId)) { root.step("menu"); return }
+      startProc.command = root.py(["supersede", "--stock",
+                                   root.pluginRegistry.inBar(root.stockId) ? "in" : "out"])
+    }
     else if (next === "menu") startProc.command = root.py(["menu"])
     else {
       root.ready = true
@@ -123,6 +138,15 @@ Item {
     } else if (root.stage === "retire") {
       if (payload && payload.status === "disabled")
         root.notify("Disabled omarchy-monitor-scale-persist; Displays records scale changes now")
+      root.step("supersede")
+    } else if (root.stage === "supersede") {
+      if (payload && payload.status === "proceed") {
+        if (root.pluginRegistry.setEnabled(root.stockId, false))
+          root.notify("Removed Omarchy's Display widget from the bar; Displays takes its place")
+        else
+          console.warn(root.pluginId, "supersede: could not take " + root.stockId
+                       + " off the bar; run: omarchy plugin disable " + root.stockId)
+      }
       root.step("menu")
     } else if (root.stage === "menu") {
       if (payload && payload.status === "added")

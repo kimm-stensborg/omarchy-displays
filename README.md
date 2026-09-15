@@ -10,11 +10,12 @@ per monitor in Omarchy.
 ```bash
 omarchy plugin add https://github.com/kimm-stensborg/omarchy-displays.git
 omarchy plugin enable io.github.kimm-stensborg.displays --section right --after omarchy.monitor
-omarchy plugin disable omarchy.monitor
 ```
 
 On first start it takes over `~/.config/hypr/monitors.lua`, and nothing on
 screen changes. Your old file is kept next to it as `monitors.lua.bak.<timestamp>`.
+It also takes Omarchy's own Display widget off the bar, once, since it does the
+same job. Put that widget back and it stays there.
 
 To open it with `SUPER + CTRL + D`, add this to `~/.config/hypr/bindings.lua`:
 
